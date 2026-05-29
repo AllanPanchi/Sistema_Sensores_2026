@@ -1,98 +1,49 @@
 /*==============================================================*/
-/* DBMS name:      PostgreSQL 8                                 */
-/* Created on:     19/5/2026 18:20:29                           */
+/* DBMS name:      PostgreSQL                                   */
+/* Database:       usuarios                                     */
 /*==============================================================*/
 
-
-drop index ROL_PK;
-
-drop table ROL;
-
-drop index TENER_FK;
-
-drop index ASIGNADO_FK;
-
-drop index ROLASIGNACION_PK;
-
-drop table ROLASIGNACION;
-
-drop index USUARIO_PK;
-
-drop table USUARIO;
+DROP TABLE IF EXISTS ROLASIGNACION;
+DROP TABLE IF EXISTS USUARIO;
+DROP TABLE IF EXISTS ROL;
 
 /*==============================================================*/
 /* Table: ROL                                                   */
 /*==============================================================*/
-create table ROL (
-   ROLID                SERIAL               not null,
-   NOMBREROL            VARCHAR(100)         null,
-   constraint PK_ROL primary key (ROLID)
-);
-
-/*==============================================================*/
-/* Index: ROL_PK                                                */
-/*==============================================================*/
-create unique index ROL_PK on ROL (
-ROLID
-);
-
-/*==============================================================*/
-/* Table: ROLASIGNACION                                         */
-/*==============================================================*/
-create table ROLASIGNACION (
-   USUARIOID            INT4                 not null,
-   ROLID                INT4                 not null,
-   constraint PK_ROLASIGNACION primary key (USUARIOID, ROLID)
-);
-
-/*==============================================================*/
-/* Index: ROLASIGNACION_PK                                      */
-/*==============================================================*/
-create unique index ROLASIGNACION_PK on ROLASIGNACION (
-USUARIOID,
-ROLID
-);
-
-/*==============================================================*/
-/* Index: ASIGNADO_FK                                           */
-/*==============================================================*/
-create  index ASIGNADO_FK on ROLASIGNACION (
-ROLID
-);
-
-/*==============================================================*/
-/* Index: TENER_FK                                              */
-/*==============================================================*/
-create  index TENER_FK on ROLASIGNACION (
-USUARIOID
+CREATE TABLE ROL (
+   ROLID      SERIAL       NOT NULL,
+   NOMBREROL  VARCHAR(100) NOT NULL UNIQUE,
+   CONSTRAINT PK_ROL PRIMARY KEY (ROLID)
 );
 
 /*==============================================================*/
 /* Table: USUARIO                                               */
 /*==============================================================*/
-create table USUARIO (
-   USUARIOID            SERIAL               not null,
-   NOMBRE               VARCHAR(100)         null,
-   APELLIDO             VARCHAR(100)         null,
-   CORREO               VARCHAR(100)         null,
-   CEDULA               VARCHAR(100)         null,
-   constraint PK_USUARIO primary key (USUARIOID)
+CREATE TABLE USUARIO (
+   USUARIOID  SERIAL       NOT NULL,
+   NOMBRE     VARCHAR(100) NOT NULL,
+   APELLIDO   VARCHAR(100) NOT NULL,
+   CORREO     VARCHAR(100) NOT NULL UNIQUE,
+   CEDULA     VARCHAR(20)  NOT NULL,
+   CONTRASENA VARCHAR(255) NOT NULL,
+   CONSTRAINT PK_USUARIO PRIMARY KEY (USUARIOID)
 );
 
 /*==============================================================*/
-/* Index: USUARIO_PK                                            */
+/* Table: ROLASIGNACION                                         */
 /*==============================================================*/
-create unique index USUARIO_PK on USUARIO (
-USUARIOID
+CREATE TABLE ROLASIGNACION (
+   USUARIOID INT4 NOT NULL,
+   ROLID     INT4 NOT NULL,
+   CONSTRAINT PK_ROLASIGNACION PRIMARY KEY (USUARIOID, ROLID),
+   CONSTRAINT FK_ROLASIGN_USUARIO FOREIGN KEY (USUARIOID)
+      REFERENCES USUARIO (USUARIOID) ON DELETE CASCADE ON UPDATE RESTRICT,
+   CONSTRAINT FK_ROLASIGN_ROL FOREIGN KEY (ROLID)
+      REFERENCES ROL (ROLID) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
-alter table ROLASIGNACION
-   add constraint FK_ROLASIGN_ASIGNADO_ROL foreign key (ROLID)
-      references ROL (ROLID)
-      on delete restrict on update restrict;
-
-alter table ROLASIGNACION
-   add constraint FK_ROLASIGN_TENER_USUARIO foreign key (USUARIOID)
-      references USUARIO (USUARIOID)
-      on delete restrict on update restrict;
-
+/*==============================================================*/
+/* Seed: Roles del sistema                                      */
+/*==============================================================*/
+INSERT INTO ROL (NOMBREROL) VALUES ('ADMINISTRADOR');
+INSERT INTO ROL (NOMBREROL) VALUES ('OPERADOR');

@@ -1,103 +1,58 @@
 /*==============================================================*/
-/* DBMS name:      PostgreSQL 8                                 */
-/* Created on:     19/5/2026 18:18:57                           */
+/* DBMS name:      PostgreSQL                                   */
+/* Database:       sensores                                     */
 /*==============================================================*/
 
+DROP TABLE IF EXISTS SENSOR;
+DROP TABLE IF EXISTS BOYA;
+DROP TABLE IF EXISTS UNIDADESMEDIDA;
 
-drop index BOYA_PK;
-
-drop table BOYA;
-
-drop index TIENE_FK;
-
-drop index REPRESENTA_FK;
-
-drop index SENSOR_PK;
-
-drop table SENSOR;
-
-drop index UNIDADESMEDIDA_PK;
-
-drop table UNIDADESMEDIDA;
+/*==============================================================*/
+/* Table: UNIDADESMEDIDA                                        */
+/*==============================================================*/
+CREATE TABLE UNIDADESMEDIDA (
+   IDUNIDAD     SERIAL       NOT NULL,
+   NOMBREUNIDAD VARCHAR(100) NOT NULL,
+   NOMENCLATURA VARCHAR(20)  NOT NULL,
+   CONSTRAINT PK_UNIDADESMEDIDA PRIMARY KEY (IDUNIDAD)
+);
 
 /*==============================================================*/
 /* Table: BOYA                                                  */
 /*==============================================================*/
-create table BOYA (
-   IDBOYA               SERIAL               not null,
-   NOMBRE               VARCHAR(100)         null,
-   ESTADO               BOOL                 null,
-   constraint PK_BOYA primary key (IDBOYA)
-);
-
-/*==============================================================*/
-/* Index: BOYA_PK                                               */
-/*==============================================================*/
-create unique index BOYA_PK on BOYA (
-IDBOYA
+CREATE TABLE BOYA (
+   IDBOYA SERIAL       NOT NULL,
+   NOMBRE VARCHAR(100) NOT NULL,
+   ESTADO BOOL         NOT NULL DEFAULT TRUE,
+   CONSTRAINT PK_BOYA PRIMARY KEY (IDBOYA)
 );
 
 /*==============================================================*/
 /* Table: SENSOR                                                */
 /*==============================================================*/
-create table SENSOR (
-   IDSENSOR             SERIAL               not null,
-   IDUNIDAD             INT4                 null,
-   IDBOYA               INT4                 null,
-   NOMBRESENSOR         VARCHAR(100)         null,
-   RANGOOPERATIVOMIN    NUMERIC              null,
-   UMBRALRIESGOMIN      NUMERIC              null,
-   RANGOOPERATIVOMAX    NUMERIC              null,
-   UMBRALRIESGOMAX      NUMERIC              null,
-   ESTADO               BOOL                 null,
-   constraint PK_SENSOR primary key (IDSENSOR)
+CREATE TABLE SENSOR (
+   IDSENSOR          SERIAL       NOT NULL,
+   IDUNIDAD          INT4         NOT NULL,
+   IDBOYA            INT4         NOT NULL,
+   NOMBRESENSOR      VARCHAR(100) NOT NULL,
+   RANGOOPERATIVOMIN NUMERIC      NOT NULL,
+   UMBRALRIESGOMIN   NUMERIC      NOT NULL,
+   RANGOOPERATIVOMAX NUMERIC      NOT NULL,
+   UMBRALRIESGOMAX   NUMERIC      NOT NULL,
+   ESTADO            BOOL         NOT NULL DEFAULT TRUE,
+   CONSTRAINT PK_SENSOR PRIMARY KEY (IDSENSOR),
+   CONSTRAINT FK_SENSOR_UNIDAD FOREIGN KEY (IDUNIDAD)
+      REFERENCES UNIDADESMEDIDA (IDUNIDAD) ON DELETE RESTRICT ON UPDATE RESTRICT,
+   CONSTRAINT FK_SENSOR_BOYA FOREIGN KEY (IDBOYA)
+      REFERENCES BOYA (IDBOYA) ON DELETE RESTRICT ON UPDATE RESTRICT
 );
 
 /*==============================================================*/
-/* Index: SENSOR_PK                                             */
+/* Seed: Unidades de medida típicas para monitoreo marino       */
 /*==============================================================*/
-create unique index SENSOR_PK on SENSOR (
-IDSENSOR
-);
-
-/*==============================================================*/
-/* Index: REPRESENTA_FK                                         */
-/*==============================================================*/
-create  index REPRESENTA_FK on SENSOR (
-IDUNIDAD
-);
-
-/*==============================================================*/
-/* Index: TIENE_FK                                              */
-/*==============================================================*/
-create  index TIENE_FK on SENSOR (
-IDBOYA
-);
-
-/*==============================================================*/
-/* Table: UNIDADESMEDIDA                                        */
-/*==============================================================*/
-create table UNIDADESMEDIDA (
-   IDUNIDAD             SERIAL               not null,
-   NOMBREUNIDAD         VARCHAR(100)         null,
-   NOMENCLATURA         VARCHAR(100)         null,
-   constraint PK_UNIDADESMEDIDA primary key (IDUNIDAD)
-);
-
-/*==============================================================*/
-/* Index: UNIDADESMEDIDA_PK                                     */
-/*==============================================================*/
-create unique index UNIDADESMEDIDA_PK on UNIDADESMEDIDA (
-IDUNIDAD
-);
-
-alter table SENSOR
-   add constraint FK_SENSOR_REPRESENT_UNIDADES foreign key (IDUNIDAD)
-      references UNIDADESMEDIDA (IDUNIDAD)
-      on delete restrict on update restrict;
-
-alter table SENSOR
-   add constraint FK_SENSOR_TIENE_BOYA foreign key (IDBOYA)
-      references BOYA (IDBOYA)
-      on delete restrict on update restrict;
-
+INSERT INTO UNIDADESMEDIDA (NOMBREUNIDAD, NOMENCLATURA) VALUES
+   ('Potencial de Hidrógeno',    'pH'),
+   ('Temperatura',               '°C'),
+   ('Salinidad',                 'PSU'),
+   ('Oxígeno Disuelto',          'mg/L'),
+   ('Turbidez',                  'NTU');

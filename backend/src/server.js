@@ -1,27 +1,30 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
+import 'dotenv/config';
+import app from './app.js';
+import poolUsuarios from './config/db.usuarios.js';
+import poolSensores from './config/db.sensores.js';
+import { influxUrl } from './config/influxdb.js';
 
-// Cargar variables de entorno
-dotenv.config();
-
-const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middlewares base
-app.use(cors());
-app.use(express.json()); // Permite recibir datos en formato JSON
+try {
+  // ── Verificar PostgreSQL: DB usuarios ─────────────────────────────────
+  await poolUsuarios.query('SELECT 1');
+  console.log('[DB] Conectado a PostgreSQL → usuarios');
 
-// Ruta de prueba
-app.get('/api/health', (req, res) => {
-    res.json({ 
-        estado: 'Activo', 
-        mensaje: 'Bienvenido al backend de HidroSentinel',
-        tiempo: new Date()
-    });
-});
+  // ── Verificar PostgreSQL: DB sensores ─────────────────────────────────
+  await poolSensores.query('SELECT 1');
+  console.log('[DB] Conectado a PostgreSQL → sensores');
 
-// Levantar el servidor
-app.listen(PORT, () => {
-    console.log(`🚀 Servidor backend corriendo en http://localhost:${PORT}`);
-});
+  // ── Verificar InfluxDB (health endpoint) ──────────────────────────────
+  const influxHealth = await fetch(`${influxUrl}/health`);
+  if (!influxHealth.ok) throw new Error('InfluxDB health check fallido');
+  console.log('[DB] Conectado a InfluxDB');
+
+  // ── Levantar servidor ──────────────────────────────────────────────────
+  app.listen(PORT, () => {
+    console.log(`[Server] HidroSentinel API corriendo en http://localhost:${PORT}`);
+  });
+} catch (err) {
+  console.error('[Server] Error fatal al iniciar:', err.message);
+  process.exit(1);
+}
