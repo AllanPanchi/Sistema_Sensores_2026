@@ -6,17 +6,35 @@ import * as repo from './boyas.repository.js';
 //   umbralriesgomin ≤ rangooperativomin < rangooperativomax ≤ umbralriesgomax
 // El umbral de riesgo "envuelve" al rango operativo normal por fuera.
 const validarRangos = ({ rangooperativomin, rangooperativomax, umbralriesgomin, umbralriesgomax }) => {
-  const min  = parseFloat(rangooperativomin);
-  const max  = parseFloat(rangooperativomax);
+  const min = parseFloat(rangooperativomin);
+  const max = parseFloat(rangooperativomax);
   const uMin = parseFloat(umbralriesgomin);
   const uMax = parseFloat(umbralriesgomax);
   const errors = [];
 
-  if (min >= max)   errors.push('rangooperativomin debe ser menor que rangooperativomax.');
-  if (uMin > min)   errors.push('umbralriesgomin no puede ser mayor que rangooperativomin.');
-  if (uMax < max)   errors.push('umbralriesgomax no puede ser menor que rangooperativomax.');
+  if ([min, max, uMin, uMax].some(Number.isNaN)) {
+    errors.push('Todos los rangos y umbrales deben ser valores numéricos.');
+  }
 
-  if (errors.length) throw new AppError('Rangos operativos inválidos', 400, errors);
+  if (min >= max) {
+    errors.push('rangooperativomin debe ser menor que rangooperativomax.');
+  }
+
+  if (uMin >= uMax) {
+    errors.push('umbralriesgomin debe ser menor que umbralriesgomax.');
+  }
+
+  if (uMin <= min) {
+    errors.push('umbralriesgomin debe ser mayor que rangooperativomin.');
+  }
+
+  if (uMax >= max) {
+    errors.push('umbralriesgomax debe ser menor que rangooperativomax.');
+  }
+
+  if (errors.length) {
+    throw new AppError('Rangos operativos inválidos', 400, errors);
+  }
 };
 
 // ── Boyas ──────────────────────────────────────────────────────────────────
@@ -35,7 +53,7 @@ export const crearBoya = async ({ nombre, estado = true }) => {
 };
 
 export const actualizarBoya = async (id, { nombre, estado }) => {
-  if (!nombre?.trim())    throw new AppError('El nombre de la boya es requerido', 400);
+  if (!nombre?.trim()) throw new AppError('El nombre de la boya es requerido', 400);
   if (estado === undefined || estado === null) {
     throw new AppError('El estado de la boya es requerido', 400);
   }

@@ -2,16 +2,16 @@
 set -e
 
 echo "===================================================="
-echo "INICIANDO CREACIÓN DE BASES DE DATOS MULTIDOMINIO"
+echo "INICIANDO CREACIÃ“N DE BASES DE DATOS MULTIDOMINIO"
 echo "===================================================="
 
-# 1. Crear las dos bases de datos de forma explícitas
+# 1. Crear las dos bases de datos de forma explÃ­citas
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "postgres" <<-EOSQL
     CREATE DATABASE usuarios;
     CREATE DATABASE sensores;
 EOSQL
 
-echo "Bases de datos 'usuarios' y 'sensores' creadas con éxito."
+echo "Bases de datos 'usuarios' y 'sensores' creadas con Ã©xito."
 
 # 2. Ejecutar el script Usuario.sql dentro de la base de datos 'usuarios'
 echo "Cargando esquema de tablas en base de datos: usuarios..."
@@ -22,5 +22,5 @@ echo "Cargando esquema de tablas en base de datos: sensores..."
 psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "sensores" -f /docker-entrypoint-initdb.d/sql/Boyas.sql
 
 echo "===================================================="
-echo "PROCESO DE INICIALIZACIÓN COMPLETADO CON ÉXITO"
+echo "PROCESO DE INICIALIZACIÃ“N COMPLETADO CON Ã‰XITO"
 echo "===================================================="

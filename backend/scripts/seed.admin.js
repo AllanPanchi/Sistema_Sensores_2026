@@ -1,6 +1,25 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import bcrypt from 'bcryptjs';
-import pool from '../src/config/db.usuarios.js';
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const envCandidates = [
+  resolve(__dirname, '../../.env'),
+  resolve(__dirname, '../.env'),
+];
+
+const envPath = envCandidates.find((candidate) => existsSync(candidate));
+
+if (envPath) {
+  dotenv.config({ path: envPath });
+} else {
+  dotenv.config();
+  console.warn('[Env] No se encontró .env en la raíz ni en backend/.');
+}
+
+const { default: pool } = await import('../src/config/db.usuarios.js');
 
 const ADMIN = {
   nombre:   'Admin',
