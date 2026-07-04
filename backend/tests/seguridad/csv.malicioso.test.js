@@ -10,6 +10,7 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('../../src/modules/boyas/boyas.repository.js', () => ({
   findBoyaById:       jest.fn(),
   findSensoresByBoya: jest.fn(),
+  findAllBoyas:       jest.fn(),
 }));
 jest.unstable_mockModule('../../src/modules/telemetria/telemetria.repository.js', () => ({
   writeTelemetria: jest.fn(),

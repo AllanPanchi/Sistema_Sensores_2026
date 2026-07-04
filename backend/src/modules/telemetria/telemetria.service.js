@@ -1,6 +1,6 @@
 import { AppError } from '../../middlewares/error.middleware.js';
 import * as repo from './telemetria.repository.js';
-import { findBoyaById, findSensoresByBoya } from '../boyas/boyas.repository.js';
+import { findBoyaById, findSensoresByBoya, findAllBoyas } from '../boyas/boyas.repository.js';
 
 // ── Límites de seguridad ───────────────────────────────────────────────────
 const MAX_LINEAS = 100_000; // tope de filas por archivo (anti-DoS)
@@ -274,5 +274,89 @@ export const consultarTelemetria = async (idboya, { horas, limite } = {}) => {
     rango_horas: h,
     total: mediciones.length,
     mediciones,
+  };
+};
+
+// ── Evaluación de alertas ───────────────────────────────────────────────────
+// Ventana amplia: se busca la ÚLTIMA lectura de cada sensor sin importar su
+// antigüedad. La fecha viaja en cada alerta para que el operador juzgue cuán
+// reciente es la medición.
+const DIAS_VENTANA_ALERTAS = 365;
+
+// Clasifica un valor según los límites del sensor. La invariante del dominio es
+// rangooperativomin < umbralriesgomin < umbralriesgomax < rangooperativomax:
+//   NORMAL   → dentro de la banda de umbrales [umbralriesgomin, umbralriesgomax]
+//   RIESGO   → dentro del rango operativo pero fuera de la banda segura
+//   ANOMALIA → fuera del rango operativo físico (posible fallo o extremo)
+const clasificarValor = (valor, sensor) => {
+  const roMin = parseFloat(sensor.rangooperativomin);
+  const roMax = parseFloat(sensor.rangooperativomax);
+  const urMin = parseFloat(sensor.umbralriesgomin);
+  const urMax = parseFloat(sensor.umbralriesgomax);
+  if (valor < roMin || valor > roMax) return 'ANOMALIA';
+  if (valor < urMin || valor > urMax) return 'RIESGO';
+  return 'NORMAL';
+};
+
+const construirMensaje = (nivel, valor, sensor) => {
+  const u = sensor.nomenclatura ? ` ${sensor.nomenclatura}` : '';
+  if (nivel === 'ANOMALIA') {
+    return `Lectura ${valor}${u} fuera del rango operativo [${sensor.rangooperativomin}, ${sensor.rangooperativomax}]`;
+  }
+  const bajoDelMin = valor < parseFloat(sensor.umbralriesgomin);
+  const limite     = bajoDelMin ? sensor.umbralriesgomin : sensor.umbralriesgomax;
+  const direccion  = bajoDelMin ? 'por debajo' : 'por encima';
+  return `Lectura ${valor}${u} ${direccion} del umbral de riesgo (${limite}${u})`;
+};
+
+// Evalúa el último valor de cada sensor de cada boya contra sus umbrales y
+// devuelve solo las lecturas en RIESGO o ANOMALIA (las NORMAL no son alertas).
+export const evaluarAlertas = async () => {
+  const boyas = await findAllBoyas();
+  const alertas = [];
+
+  for (const boya of boyas) {
+    const sensores = await findSensoresByBoya(boya.idboya);
+    if (sensores.length === 0) continue;
+
+    const ultimos = await repo.queryUltimosValores(boya.idboya, DIAS_VENTANA_ALERTAS);
+    const valorPorCampo = new Map(ultimos.map((u) => [u.campo, u]));
+
+    for (const sensor of sensores) {
+      const medicion = valorPorCampo.get(normalizarCampo(sensor.nombresensor));
+      if (!medicion) continue; // sin datos para este sensor
+
+      const nivel = clasificarValor(medicion.valor, sensor);
+      if (nivel === 'NORMAL') continue;
+
+      alertas.push({
+        boya:    { id: boya.idboya, nombre: boya.nombre },
+        sensor:  sensor.nombresensor,
+        unidad:  sensor.nomenclatura,
+        valor:   medicion.valor,
+        nivel,
+        mensaje: construirMensaje(nivel, medicion.valor, sensor),
+        limites: {
+          rangooperativomin: Number(sensor.rangooperativomin),
+          umbralriesgomin:   Number(sensor.umbralriesgomin),
+          umbralriesgomax:   Number(sensor.umbralriesgomax),
+          rangooperativomax: Number(sensor.rangooperativomax),
+        },
+        fecha:   medicion.fecha,
+      });
+    }
+  }
+
+  // Anomalías primero, luego riesgos
+  const orden = { ANOMALIA: 0, RIESGO: 1 };
+  alertas.sort((a, b) => orden[a.nivel] - orden[b.nivel]);
+
+  return {
+    total: alertas.length,
+    resumen: {
+      anomalias: alertas.filter((a) => a.nivel === 'ANOMALIA').length,
+      riesgos:   alertas.filter((a) => a.nivel === 'RIESGO').length,
+    },
+    alertas,
   };
 };

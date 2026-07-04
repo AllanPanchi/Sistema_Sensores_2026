@@ -14,6 +14,7 @@ jest.unstable_mockModule('../../src/modules/boyas/boyas.repository.js', () => ({
     { idsensor: 1, nombresensor: 'Temp1' },
     { idsensor: 2, nombresensor: 'Ph' },
   ]),
+  findAllBoyas:       jest.fn().mockResolvedValue([]),
 }));
 jest.unstable_mockModule('../../src/modules/telemetria/telemetria.repository.js', () => ({
   writeTelemetria: jest.fn().mockImplementation(async (_id, filas) => filas.length),

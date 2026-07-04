@@ -14,3 +14,10 @@ export const consultarTelemetria = async (req, res, next) => {
     ok(res, 'Telemetría obtenida exitosamente', data);
   } catch (err) { next(err); }
 };
+
+export const listarAlertas = async (req, res, next) => {
+  try {
+    const data = await telemetriaService.evaluarAlertas();
+    ok(res, 'Alertas evaluadas exitosamente', data);
+  } catch (err) { next(err); }
+};

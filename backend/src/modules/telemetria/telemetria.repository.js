@@ -43,3 +43,20 @@ export const queryTelemetria = async (idboya, horas, limite) => {
     ...campos,
   }));
 };
+
+// Último valor registrado de CADA campo (sensor) de una boya, dentro de una
+// ventana de días. `last()` devuelve el punto más reciente por serie (_field).
+export const queryUltimosValores = async (idboya, dias) => {
+  const queryApi = getQueryApi();
+  // idboya y dias se interpolan en Flux → se fuerzan a entero (nunca texto)
+  const boya  = parseInt(idboya, 10);
+  const rango = parseInt(dias, 10);
+  const flux = `
+    from(bucket: "${process.env.INFLUXDB_BUCKET}")
+      |> range(start: -${rango}d)
+      |> filter(fn: (r) => r._measurement == "${MEASUREMENT}" and r.boya == "${boya}")
+      |> last()
+  `;
+  const rows = await queryApi.collectRows(flux);
+  return rows.map((r) => ({ campo: r._field, valor: r._value, fecha: r._time }));
+};

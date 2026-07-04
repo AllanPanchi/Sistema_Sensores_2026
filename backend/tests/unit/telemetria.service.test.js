@@ -10,10 +10,12 @@ import { jest } from '@jest/globals';
 jest.unstable_mockModule('../../src/modules/boyas/boyas.repository.js', () => ({
   findBoyaById:       jest.fn(),
   findSensoresByBoya: jest.fn(),
+  findAllBoyas:       jest.fn(),
 }));
 jest.unstable_mockModule('../../src/modules/telemetria/telemetria.repository.js', () => ({
-  writeTelemetria: jest.fn(),
-  queryTelemetria: jest.fn(),
+  writeTelemetria:    jest.fn(),
+  queryTelemetria:    jest.fn(),
+  queryUltimosValores: jest.fn(),
 }));
 
 // Con ESM, los mocks deben declararse ANTES del import dinámico del servicio
@@ -226,5 +228,87 @@ describe('consultarTelemetria — sanitización de parámetros', () => {
     expect(telemetriaRepo.queryTelemetria).toHaveBeenCalledWith(3, 24, 500);
     // el argumento es un Number, no el string malicioso
     expect(typeof telemetriaRepo.queryTelemetria.mock.calls[0][0]).toBe('number');
+  });
+});
+
+// ── Evaluación de alertas: clasificación por rangos y umbrales ──────────────
+describe('evaluarAlertas — clasificación de lecturas', () => {
+  // Sensor de pH con la invariante rangoMin < umbralMin < umbralMax < rangoMax
+  const SENSOR_PH = {
+    idsensor: 2, nombresensor: 'Ph', nomenclatura: 'pH',
+    rangooperativomin: '0', umbralriesgomin: '6.5',
+    umbralriesgomax: '9', rangooperativomax: '14',
+  };
+
+  // Configura una sola boya con un sensor y su último valor
+  const escenario = (sensor, ultimoValor) => {
+    boyasRepo.findAllBoyas.mockResolvedValue([{ idboya: 3, nombre: 'Boya Test' }]);
+    boyasRepo.findSensoresByBoya.mockResolvedValue([sensor]);
+    telemetriaRepo.queryUltimosValores.mockResolvedValue([
+      { campo: 'ph', valor: ultimoValor, fecha: '2026-06-11T13:00:00Z' },
+    ]);
+  };
+
+  test('valor dentro de la banda segura NO genera alerta', async () => {
+    escenario(SENSOR_PH, 7.5); // entre 6.5 y 9
+    const res = await service.evaluarAlertas();
+    expect(res.total).toBe(0);
+  });
+
+  test('valor fuera de la banda pero dentro del rango operativo → RIESGO', async () => {
+    escenario(SENSOR_PH, 9.6); // > 9 (umbral) pero < 14 (rango)
+    const res = await service.evaluarAlertas();
+    expect(res.total).toBe(1);
+    expect(res.resumen).toEqual({ anomalias: 0, riesgos: 1 });
+    expect(res.alertas[0].nivel).toBe('RIESGO');
+    expect(res.alertas[0].mensaje).toContain('por encima del umbral');
+  });
+
+  test('valor fuera del rango operativo → ANOMALIA', async () => {
+    escenario(SENSOR_PH, 15); // > 14 (rango operativo)
+    const res = await service.evaluarAlertas();
+    expect(res.resumen).toEqual({ anomalias: 1, riesgos: 0 });
+    expect(res.alertas[0].nivel).toBe('ANOMALIA');
+    expect(res.alertas[0].mensaje).toContain('fuera del rango operativo');
+  });
+
+  test('valor por debajo del umbral mínimo → RIESGO con dirección correcta', async () => {
+    escenario(SENSOR_PH, 3); // < 6.5 (umbral) pero > 0 (rango)
+    const res = await service.evaluarAlertas();
+    expect(res.alertas[0].nivel).toBe('RIESGO');
+    expect(res.alertas[0].mensaje).toContain('por debajo del umbral');
+  });
+
+  test('anomalías se ordenan antes que riesgos', async () => {
+    boyasRepo.findAllBoyas.mockResolvedValue([{ idboya: 3, nombre: 'Boya Test' }]);
+    boyasRepo.findSensoresByBoya.mockResolvedValue([
+      SENSOR_PH,
+      { ...SENSOR_PH, idsensor: 1, nombresensor: 'Temp1', nomenclatura: '°C',
+        rangooperativomin: '0', umbralriesgomin: '10', umbralriesgomax: '35', rangooperativomax: '50' },
+    ]);
+    telemetriaRepo.queryUltimosValores.mockResolvedValue([
+      { campo: 'ph',    valor: 9.6, fecha: '2026-06-11T13:00:00Z' }, // RIESGO
+      { campo: 'temp1', valor: 55,  fecha: '2026-06-11T13:00:00Z' }, // ANOMALIA
+    ]);
+    const res = await service.evaluarAlertas();
+    expect(res.total).toBe(2);
+    expect(res.alertas[0].nivel).toBe('ANOMALIA'); // primero
+    expect(res.alertas[1].nivel).toBe('RIESGO');
+  });
+
+  test('un sensor sin datos de telemetría no genera alerta', async () => {
+    boyasRepo.findAllBoyas.mockResolvedValue([{ idboya: 3, nombre: 'Boya Test' }]);
+    boyasRepo.findSensoresByBoya.mockResolvedValue([SENSOR_PH]);
+    telemetriaRepo.queryUltimosValores.mockResolvedValue([]); // sin lecturas
+    const res = await service.evaluarAlertas();
+    expect(res.total).toBe(0);
+  });
+
+  test('una boya sin sensores se omite sin consultar InfluxDB', async () => {
+    boyasRepo.findAllBoyas.mockResolvedValue([{ idboya: 9, nombre: 'Boya Vacía' }]);
+    boyasRepo.findSensoresByBoya.mockResolvedValue([]);
+    const res = await service.evaluarAlertas();
+    expect(res.total).toBe(0);
+    expect(telemetriaRepo.queryUltimosValores).not.toHaveBeenCalled();
   });
 });

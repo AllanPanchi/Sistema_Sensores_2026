@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import { verifyToken, requireRole } from '../../middlewares/auth.middleware.js';
 import { AppError } from '../../middlewares/error.middleware.js';
-import { subirCSV, consultarTelemetria } from './telemetria.controller.js';
+import { subirCSV, consultarTelemetria, listarAlertas } from './telemetria.controller.js';
 
 const router = Router();
 
@@ -47,6 +47,11 @@ const uploadCSV = (req, res, next) => {
 
 // Todos los endpoints requieren autenticación
 router.use(verifyToken);
+
+// GET /api/telemetria/alertas — alertas de riesgo/anomalía de todas las boyas.
+// IMPORTANTE: debe declararse ANTES de /:idboya para que Express no interprete
+// "alertas" como un parámetro dinámico.
+router.get('/alertas', listarAlertas);
 
 // POST /api/telemetria/:idboya — ingesta de CSV (multipart, campo "archivo")
 router.post('/:idboya', requireRole('ADMINISTRADOR', 'OPERADOR'), uploadCSV, subirCSV);

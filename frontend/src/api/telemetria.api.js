@@ -12,3 +12,6 @@ export const uploadCSV = (boyaId, file) => {
 // Últimas mediciones de una boya
 export const getTelemetria = (boyaId, { horas = 24, limite = 500 } = {}) =>
   http.get(`/telemetria/${boyaId}`, { params: { horas, limite } });
+
+// Alertas de riesgo/anomalía de todas las boyas (último valor vs. umbrales)
+export const getAlertas = () => http.get('/telemetria/alertas');
