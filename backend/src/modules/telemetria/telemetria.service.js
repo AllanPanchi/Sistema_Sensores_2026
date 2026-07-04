@@ -265,7 +265,7 @@ export const consultarTelemetria = async (idboya, { horas, limite } = {}) => {
 
   // Sanitizar: estos valores se interpolan en la query Flux, por eso se fuerzan
   // a enteros acotados (nunca se interpola texto del usuario).
-  const h = Math.min(Math.max(parseInt(horas, 10) || 24, 1), 720);      // 1h – 30 días
+  const h = Math.min(Math.max(parseInt(horas, 10) || 24, 1), 4320);      // 1h – 360 días
   const n = Math.min(Math.max(parseInt(limite, 10) || 500, 1), 5000);
 
   const mediciones = await repo.queryTelemetria(boyaId, h, n);

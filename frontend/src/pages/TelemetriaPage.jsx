@@ -4,10 +4,12 @@ import { uploadCSV, getTelemetria } from '../api/telemetria.api';
 import { useAuth } from '../context/AuthContext';
 
 const RANGOS = [
-  { valor: 24,  etiqueta: 'Últimas 24 h' },
-  { valor: 72,  etiqueta: 'Últimos 3 días' },
-  { valor: 168, etiqueta: 'Última semana' },
-  { valor: 720, etiqueta: 'Último mes' },
+  { valor: 24,   etiqueta: 'Últimas 24 h' },
+  { valor: 72,   etiqueta: 'Últimos 3 días' },
+  { valor: 168,  etiqueta: 'Última semana' },
+  { valor: 720,  etiqueta: 'Último mes' },
+  { valor: 2160, etiqueta: 'Últimos 3 meses' },
+  { valor: 4320, etiqueta: 'Últimos 6 meses' },
 ];
 
 // "humedad_1" → "Humedad 1", "nivel_m" → "Nivel M"
@@ -19,6 +21,11 @@ const formatearFecha = (iso) =>
     day: '2-digit', month: '2-digit',
     hour: '2-digit', minute: '2-digit',
   });
+
+const formatearNumero = (valor) => {
+  if (valor === null || valor === undefined) return '—';
+  return typeof valor === 'number' ? valor.toFixed(2) : valor;
+};
 
 // ── Mini gráfico de línea (una serie por sensor, escala propia) ────────────
 function MiniChart({ nombre, puntos }) {
@@ -57,7 +64,7 @@ function MiniChart({ nombre, puntos }) {
     <div className="bg-white rounded-xl border border-slate-200 p-4">
       <div className="flex items-baseline justify-between mb-1">
         <h4 className="text-sm font-semibold text-slate-700">{etiquetaCampo(nombre)}</h4>
-        <span className="text-sm font-bold text-slate-800">{ultimo.valor}</span>
+        <span className="text-sm font-bold text-slate-800">{formatearNumero(ultimo.valor)}</span>
       </div>
       <div className="relative">
         <svg
@@ -70,8 +77,8 @@ function MiniChart({ nombre, puntos }) {
           {/* Grid recesivo: solo min y max */}
           <line x1={PAD.left} y1={y(max)} x2={W - PAD.right} y2={y(max)} stroke="#e2e8f0" strokeWidth="1" />
           <line x1={PAD.left} y1={y(min)} x2={W - PAD.right} y2={y(min)} stroke="#e2e8f0" strokeWidth="1" />
-          <text x={PAD.left - 4} y={y(max) + 3} textAnchor="end" fontSize="9" fill="#94a3b8">{max}</text>
-          <text x={PAD.left - 4} y={y(min) + 3} textAnchor="end" fontSize="9" fill="#94a3b8">{min}</text>
+          <text x={PAD.left - 4} y={y(max) + 3} textAnchor="end" fontSize="9" fill="#94a3b8">{formatearNumero(max)}</text>
+          <text x={PAD.left - 4} y={y(min) + 3} textAnchor="end" fontSize="9" fill="#94a3b8">{formatearNumero(min)}</text>
 
           {/* Eje x: primera y última fecha */}
           <text x={PAD.left} y={H - 4} fontSize="9" fill="#94a3b8">
@@ -98,7 +105,7 @@ function MiniChart({ nombre, puntos }) {
             className="absolute pointer-events-none bg-slate-800 text-white text-xs rounded-md px-2 py-1 shadow-lg -translate-x-1/2 -translate-y-full"
             style={{ left: `${(hover.px / W) * 100}%`, top: `${(hover.py / H) * 100 - 6}%` }}
           >
-            <span className="font-semibold">{puntos[hover.i].valor}</span>
+            <span className="font-semibold">{formatearNumero(puntos[hover.i].valor)}</span>
             <span className="text-slate-300 ml-1.5">{formatearFecha(puntos[hover.i].fecha)}</span>
           </div>
         )}
@@ -116,6 +123,7 @@ export default function TelemetriaPage() {
   const [mediciones, setMediciones] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [sensorActivo, setSensorActivo] = useState(null);
 
   // Subida de CSV
   const [archivo, setArchivo] = useState(null);
@@ -145,7 +153,7 @@ export default function TelemetriaPage() {
     setLoading(true);
     setError('');
     try {
-      const res = await getTelemetria(boyaId, { horas, limite: 500 });
+      const res = await getTelemetria(boyaId, { horas, limite: 1000 });
       // El backend devuelve descendente; ascendente para graficar
       setMediciones([...res.data.data.mediciones].reverse());
     } catch (err) {
@@ -322,14 +330,64 @@ export default function TelemetriaPage() {
         )
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mb-6">
+          {/* Grilla de Tarjetas */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mb-8">
             {campos.map((campo) => {
               const serie = seriePorCampo(campo);
-              return serie.length > 1
-                ? <MiniChart key={campo} nombre={campo} puntos={serie} />
-                : null;
+              if (serie.length <= 1) return null;
+
+              const ultimoValor = formatearNumero(serie[serie.length - 1].valor);
+
+              return (
+                <div
+                  key={campo}
+                  onClick={() => setSensorActivo(campo)}
+                  className="bg-white rounded-xl border border-slate-200 p-6 flex flex-col items-center justify-center cursor-pointer hover:shadow-lg hover:border-blue-400 hover:-translate-y-1 transition-all duration-200 text-center group"
+                >
+                  <h4 className="text-md font-bold text-slate-600 mb-2">{etiquetaCampo(campo)}</h4>
+                  {/* Muestra el último valor en grande. ¡Excelente para UX! */}
+                  <span className="text-3xl font-black text-blue-600 mb-4">{ultimoValor}</span>
+                  
+                  <span className="text-xs font-semibold text-blue-500 bg-blue-50 px-3 py-1.5 rounded-full group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    Ver gráfica detallada
+                  </span>
+                </div>
+              );
             })}
           </div>
+
+          {/* --- POP-UP (MODAL) DE LA GRÁFICA --- */}
+          {sensorActivo && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl overflow-hidden relative flex flex-col">
+                
+                {/* Cabecera del Modal */}
+                <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50">
+                  <h3 className="text-lg font-bold text-slate-800">
+                    Historial de {etiquetaCampo(sensorActivo)}
+                  </h3>
+                  <button
+                    onClick={() => setSensorActivo(null)}
+                    className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                    title="Cerrar"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+
+                {/* Contenido del Modal (La gráfica) */}
+                <div className="p-6">
+                  <MiniChart 
+                    nombre={sensorActivo} 
+                    puntos={seriePorCampo(sensorActivo)} 
+                  />
+                </div>
+                
+              </div>
+            </div>
+          )}
 
           {/* Vista de tabla (accesibilidad: los datos siempre legibles como texto) */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -352,7 +410,7 @@ export default function TelemetriaPage() {
                     <tr key={m.fecha} className="border-b border-slate-50 text-slate-700">
                       <td className="px-5 py-2 whitespace-nowrap">{formatearFecha(m.fecha)}</td>
                       {campos.map((c) => (
-                        <td key={c} className="px-5 py-2">{m[c] ?? '—'}</td>
+                        <td key={c} className="px-5 py-2">{formatearNumero(m[c]) ?? '—'}</td>
                       ))}
                     </tr>
                   ))}

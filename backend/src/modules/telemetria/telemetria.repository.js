@@ -28,14 +28,25 @@ export const writeTelemetria = async (idboya, filas) => {
 // con una columna por sensor.
 export const queryTelemetria = async (idboya, horas, limite) => {
   const queryApi = getQueryApi();
+
+  let ventana = '1m';
+
+  if (horas > 168 && horas <= 720) {
+    ventana = '1h';   // 1 mes: promedio cada hora
+  } else if (horas > 720) {
+    ventana = '12h';  // 3 a 6 meses: promedio cada 12 horas
+  }
+
   const flux = `
     from(bucket: "${process.env.INFLUXDB_BUCKET}")
       |> range(start: -${horas}h)
       |> filter(fn: (r) => r._measurement == "${MEASUREMENT}" and r.boya == "${idboya}")
+      |> aggregateWindow(every: ${ventana}, fn: mean, createEmpty: false)
       |> pivot(rowKey: ["_time"], columnKey: ["_field"], valueColumn: "_value")
       |> sort(columns: ["_time"], desc: true)
       |> limit(n: ${limite})
   `;
+
   const rows = await queryApi.collectRows(flux);
   // Limpiar metadatos internos de Flux antes de devolver
   return rows.map(({ result, table, _start, _stop, _measurement, boya, _time, ...campos }) => ({
