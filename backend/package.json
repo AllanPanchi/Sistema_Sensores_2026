@@ -6,7 +6,13 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "seed": "node scripts/seed.admin.js"
+    "seed": "node scripts/seed.admin.js",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/unit tests/seguridad",
+    "test:integracion": "node --experimental-vm-modules node_modules/jest/bin/jest.js tests/integracion --runInBand"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "transform": {}
   },
   "keywords": [],
   "author": "",
@@ -20,9 +26,12 @@
     "express": "^5.2.1",
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.3",
+    "multer": "^2.2.0",
     "pg": "^8.21.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "jest": "^30.4.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
   }
 }

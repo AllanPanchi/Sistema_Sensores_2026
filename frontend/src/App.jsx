@@ -6,6 +6,7 @@ import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import UsuariosPage from './pages/UsuariosPage';
 import BoyasPage from './pages/BoyasPage';
+import TelemetriaPage from './pages/TelemetriaPage';
 import PerfilPage from './pages/PerfilPage';
 
 export default function App() {
@@ -34,6 +35,7 @@ export default function App() {
               }
             />
             <Route path="boyas" element={<BoyasPage />} />
+            <Route path="telemetria" element={<TelemetriaPage />} />
             <Route path="perfil" element={<PerfilPage />} />
             <Route path="*" element={<Navigate to="dashboard" replace />} />
           </Route>

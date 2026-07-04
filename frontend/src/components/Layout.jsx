@@ -84,6 +84,7 @@ export default function Layout() {
         <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           <NavItem to="/dashboard" onNavigate={closeSidebar}>Dashboard</NavItem>
           <NavItem to="/boyas" onNavigate={closeSidebar}>Boyas y Sensores</NavItem>
+          <NavItem to="/telemetria" onNavigate={closeSidebar}>Telemetría</NavItem>
           {hasRole('ADMINISTRADOR') && (
             <NavItem to="/usuarios" onNavigate={closeSidebar}>Usuarios</NavItem>
           )}
