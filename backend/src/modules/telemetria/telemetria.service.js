@@ -132,7 +132,8 @@ const limpiarFilas = (lineas, cabecera, columnas) => {
   const filasValidas = [];
   let filasDescartadas = 0;
   let valoresDescartados = 0;
-  const valoresPorCampo = Object.fromEntries(columnas.map(({ campo }) => [campo, []]));
+  // Índice por fieldName (nombre canónico del sensor, clave en InfluxDB)
+  const valoresPorCampo = Object.fromEntries(columnas.map(({ fieldName }) => [fieldName, []]));
 
   for (let i = 1; i < lineas.length; i++) {
     const celdas = lineas[i].split(';');
@@ -143,14 +144,16 @@ const limpiarFilas = (lineas, cabecera, columnas) => {
     if (!ts) { filasDescartadas++; continue; }
 
     const filaCampos = {};
-    for (const { campo, idx } of columnas) {
+    for (const { campo, fieldName, idx } of columnas) {
       const valor = parsearNumero(celdas[idx]);
+      // Plausibilidad: se evalúa contra campo (CSV) para aprovechar los patrones
+      // semánticos (/^ph/, /^temp/…) aunque el CSV use la nomenclatura de unidad.
       if (valor === null || !esPlausible(campo, valor)) {
         valoresDescartados++;
         continue;
       }
-      filaCampos[campo] = valor;
-      valoresPorCampo[campo].push(valor);
+      filaCampos[fieldName] = valor;
+      valoresPorCampo[fieldName].push(valor);
     }
 
     // Fila sin ningún valor rescatable → basura
@@ -180,10 +183,19 @@ export const procesarCSV = async (idboya, file) => {
       409
     );
   }
-  // Mapa: nombre de sensor normalizado → sensor (para casar columnas del CSV)
+  // Mapa primario: nombre de sensor normalizado → sensor
   const sensoresPorNombre = new Map(
     sensores.map((s) => [normalizarCampo(s.nombresensor), s])
   );
+  // Mapa secundario: nomenclatura de unidad normalizada → sensor (fallback)
+  const sensoresPorNomenclatura = new Map(
+    sensores
+      .filter((s) => s.nomenclatura?.trim())
+      .map((s) => [normalizarCampo(s.nomenclatura), s])
+  );
+  // Busca por nombre primero; si no hay match, intenta por nomenclatura de unidad.
+  const buscarSensor = (campo) =>
+    sensoresPorNombre.get(campo) ?? sensoresPorNomenclatura.get(campo);
 
   validarArchivo(file);
 
@@ -208,10 +220,16 @@ export const procesarCSV = async (idboya, file) => {
 
   // Casar columnas del CSV contra los sensores registrados: solo se ingesta
   // lo que corresponde a un sensor de la boya. El resto se ignora y reporta.
+  // fieldName = nombre normalizado del sensor en Postgres (clave en InfluxDB),
+  // independientemente de cómo se llame la columna en el CSV.
   const columnas = campos
-    .map((campo, j) => ({ campo, idx: j + 1 }))
-    .filter(({ campo }) => sensoresPorNombre.has(campo));
-  const columnasSinSensor = campos.filter((c) => !sensoresPorNombre.has(c));
+    .map((campo, j) => {
+      const sensor = buscarSensor(campo);
+      if (!sensor) return null;
+      return { campo, fieldName: normalizarCampo(sensor.nombresensor), idx: j + 1 };
+    })
+    .filter(Boolean);
+  const columnasSinSensor = campos.filter((c) => !buscarSensor(c));
 
   if (columnas.length === 0) {
     const registrados = sensores.map((s) => s.nombresensor).join(', ');

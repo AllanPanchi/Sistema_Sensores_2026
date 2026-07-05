@@ -1,7 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getBoyas } from '../api/boyas.api';
+import { getBoyas, getSensores } from '../api/boyas.api';
 import { uploadCSV, getTelemetria } from '../api/telemetria.api';
 import { useAuth } from '../context/AuthContext';
+
+// Misma normalización que usa el backend (telemetria.service.js:normalizarCampo)
+const normalizarCampo = (str) =>
+  (str ?? '').trim().toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 
 const RANGOS = [
   { valor: 24,   etiqueta: 'Últimas 24 h' },
@@ -127,6 +134,8 @@ export default function TelemetriaPage() {
 
   // Subida de CSV
   const [archivo, setArchivo] = useState(null);
+  const [preview, setPreview] = useState(null);      // { columnas: [{campo, sensor, matchType, asignacionManual}], todosSensores }
+  const [cargandoPreview, setCargandoPreview] = useState(false);
   const [subiendo, setSubiendo] = useState(false);
   const [resultado, setResultado] = useState(null);
   const fileInputRef = useRef(null);
@@ -166,17 +175,101 @@ export default function TelemetriaPage() {
 
   useEffect(() => { cargarTelemetria(); }, [cargarTelemetria]);
 
-  const handleUpload = async (e) => {
-    e.preventDefault();
+  const resetUpload = () => {
+    setArchivo(null);
+    setPreview(null);
+    setResultado(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file || !boyaId) return;
+    setArchivo(file);
+    setPreview(null);
+    setResultado(null);
+    setCargandoPreview(true);
+    try {
+      // Leer solo la primera línea del CSV para obtener las cabeceras
+      const text = await file.text();
+      const primeraLinea = text.split(/\r?\n/).find((l) => l.trim() !== '') ?? '';
+      const columnasCsv = primeraLinea.split(';').slice(1).map(normalizarCampo).filter(Boolean);
+
+      // Obtener sensores de la boya seleccionada
+      const res = await getSensores(boyaId);
+      const sensores = res.data.data;
+
+      // Construir mapas de matching (mismo criterio que el backend)
+      const porNombre = new Map(sensores.map((s) => [normalizarCampo(s.nombresensor), s]));
+      const porNomenclatura = new Map(
+        sensores
+          .filter((s) => s.nomenclatura?.trim())
+          .map((s) => [normalizarCampo(s.nomenclatura), s])
+      );
+
+      const columnas = columnasCsv.map((campo) => {
+        if (porNombre.has(campo))       return { campo, sensor: porNombre.get(campo),       matchType: 'nombre',       asignacionManual: null };
+        if (porNomenclatura.has(campo)) return { campo, sensor: porNomenclatura.get(campo), matchType: 'nomenclatura', asignacionManual: null };
+        return { campo, sensor: null, matchType: null, asignacionManual: null };
+      });
+
+      setPreview({ columnas, todosSensores: sensores });
+    } catch {
+      setError('No se pudo analizar el archivo');
+      resetUpload();
+    } finally {
+      setCargandoPreview(false);
+    }
+  };
+
+  // Actualiza la asignación manual de una fila sin match automático
+  const updateAsignacion = (idx, sensor) => {
+    setPreview((prev) => ({
+      ...prev,
+      columnas: prev.columnas.map((c, i) =>
+        i === idx ? { ...c, asignacionManual: sensor } : c
+      ),
+    }));
+  };
+
+  // Sensores de la boya que no están ya asignados (ni auto ni manual) en ninguna fila,
+  // excluyendo la fila `exceptoIdx` para que el select propio no se cuente a sí mismo.
+  const sensoresLibresEn = (exceptoIdx) => {
+    if (!preview) return [];
+    const usados = new Set(
+      preview.columnas
+        .filter((_, i) => i !== exceptoIdx)
+        .map((c) => c.sensor?.idsensor ?? c.asignacionManual?.idsensor)
+        .filter(Boolean)
+    );
+    return preview.todosSensores.filter((s) => !usados.has(s.idsensor));
+  };
+
+  const handleUpload = async () => {
     if (!archivo || !boyaId) return;
     setSubiendo(true);
     setError('');
-    setResultado(null);
     try {
-      const res = await uploadCSV(boyaId, archivo);
+      // Si el usuario asignó sensores manualmente, renombramos esas cabeceras
+      // en el CSV en memoria para que el backend las detecte por nombre de sensor.
+      const tieneManual = preview?.columnas.some((c) => c.asignacionManual);
+      let archivoASubir = archivo;
+      if (tieneManual) {
+        const text = await archivo.text();
+        const lineas = text.split(/\r?\n/);
+        const cabecera = lineas[0].split(';');
+        preview.columnas.forEach(({ campo, asignacionManual }) => {
+          if (!asignacionManual) return;
+          const j = cabecera.findIndex((h, i) => i > 0 && normalizarCampo(h) === campo);
+          if (j > 0) cabecera[j] = asignacionManual.nombresensor;
+        });
+        lineas[0] = cabecera.join(';');
+        archivoASubir = new File([lineas.join('\r\n')], archivo.name, { type: 'text/csv' });
+      }
+
+      const res = await uploadCSV(boyaId, archivoASubir);
       setResultado(res.data.data);
-      setArchivo(null);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+      resetUpload();
       await cargarTelemetria();
     } catch (err) {
       setError(err.response?.data?.message || 'Error al subir el archivo');
@@ -250,27 +343,157 @@ export default function TelemetriaPage() {
             <div className="mb-3 p-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm rounded-lg">
               Esta boya no cuenta con los sensores correspondientes. Regístralos en{' '}
               <span className="font-semibold">Boyas y Sensores</span> antes de cargar
-              telemetría — las columnas del CSV deben coincidir con los nombres de los
-              sensores registrados.
+              telemetría — las columnas del CSV deben coincidir con los nombres o las
+              unidades de los sensores registrados.
             </div>
           )}
 
-          <form onSubmit={handleUpload} className="flex flex-wrap items-center gap-3">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => setArchivo(e.target.files[0] ?? null)}
-              className="text-sm text-slate-600 file:mr-3 file:px-4 file:py-2 file:border-0 file:rounded-lg file:bg-blue-50 file:text-blue-700 file:text-sm file:font-medium hover:file:bg-blue-100 file:cursor-pointer"
-            />
-            <button
-              type="submit"
-              disabled={!archivo || !boyaId || subiendo || sinSensores}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
-            >
-              {subiendo ? 'Procesando...' : 'Subir CSV'}
-            </button>
-          </form>
+          {/* Paso 1: selección de archivo */}
+          {!preview && (
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".csv,text/csv"
+                onChange={handleFileChange}
+                disabled={sinSensores || cargandoPreview}
+                className="text-sm text-slate-600 file:mr-3 file:px-4 file:py-2 file:border-0 file:rounded-lg file:bg-blue-50 file:text-blue-700 file:text-sm file:font-medium hover:file:bg-blue-100 file:cursor-pointer disabled:opacity-50"
+              />
+              {cargandoPreview && (
+                <span className="text-sm text-slate-500 animate-pulse">Analizando columnas...</span>
+              )}
+            </div>
+          )}
+
+          {/* Paso 2: preview del mapeo de columnas */}
+          {preview && (
+            <div>
+              {/* Encabezado del preview */}
+              {(() => {
+                const conSensor   = preview.columnas.filter((c) => c.sensor || c.asignacionManual).length;
+                const sinSensor   = preview.columnas.length - conSensor;
+                return (
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm text-slate-600">
+                      <span className="font-medium">{archivo?.name}</span>
+                      {' · '}{preview.columnas.length} columna(s)
+                      {' · '}
+                      <span className="text-green-700 font-medium">{conSensor} con sensor</span>
+                      {sinSensor > 0 && (
+                        <span className="text-slate-400"> · {sinSensor} sin asignar</span>
+                      )}
+                    </p>
+                    <button onClick={resetUpload} className="text-xs text-slate-400 hover:text-slate-600 underline">
+                      Cambiar archivo
+                    </button>
+                  </div>
+                );
+              })()}
+
+              <div className="border border-slate-200 rounded-lg overflow-hidden mb-4">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 uppercase tracking-wide">
+                      <th className="px-4 py-2.5 text-left font-medium">Columna CSV</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Sensor</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Unidad</th>
+                      <th className="px-4 py-2.5 text-left font-medium">Estado</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.columnas.map(({ campo, sensor, matchType, asignacionManual }, idx) => {
+                      const sensorEfectivo = sensor ?? asignacionManual;
+                      const esVerde = Boolean(sensorEfectivo);
+                      const libres  = sensoresLibresEn(idx);
+                      return (
+                        <tr
+                          key={campo}
+                          className={
+                            esVerde
+                              ? 'bg-green-50 border-b border-green-100 last:border-0'
+                              : 'bg-slate-50 border-b border-slate-100 last:border-0'
+                          }
+                        >
+                          {/* Columna CSV */}
+                          <td className="px-4 py-2.5 font-mono text-xs text-slate-700">{campo}</td>
+
+                          {/* Sensor asignado o selector */}
+                          <td className="px-4 py-2.5">
+                            {sensor ? (
+                              <span className="text-slate-700 text-sm">{sensor.nombresensor}</span>
+                            ) : (
+                              <select
+                                value={asignacionManual?.idsensor ?? ''}
+                                onChange={(e) => {
+                                  const id = parseInt(e.target.value, 10);
+                                  updateAsignacion(idx, isNaN(id) ? null : libres.find((s) => s.idsensor === id) ?? null);
+                                }}
+                                className="text-xs border border-slate-300 rounded-md px-2 py-1.5 bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-400 max-w-[180px]"
+                              >
+                                <option value="">— Sin asignar —</option>
+                                {libres.map((s) => (
+                                  <option key={s.idsensor} value={s.idsensor}>
+                                    {s.nombresensor}
+                                  </option>
+                                ))}
+                              </select>
+                            )}
+                          </td>
+
+                          {/* Unidad */}
+                          <td className="px-4 py-2.5 text-slate-500 text-xs">
+                            {sensorEfectivo
+                              ? `${sensorEfectivo.nombreunidad} (${sensorEfectivo.nomenclatura})`
+                              : '—'}
+                          </td>
+
+                          {/* Badge de estado */}
+                          <td className="px-4 py-2.5">
+                            {sensor ? (
+                              <span className="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                                Se cargará
+                                {matchType === 'nomenclatura' && (
+                                  <span className="font-normal text-green-600"> · por unidad</span>
+                                )}
+                              </span>
+                            ) : asignacionManual ? (
+                              <span className="inline-flex items-center text-xs font-medium text-blue-700 bg-blue-100 px-2 py-0.5 rounded-full">
+                                Se cargará · manual
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-xs font-medium text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
+                                Se ignorará
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {preview.columnas.every((c) => !c.sensor && !c.asignacionManual) && (
+                <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg">
+                  Ninguna columna tiene sensor asignado. Usa los selectores o revisa los nombres
+                  de los sensores registrados en esta boya.
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3">
+                <button onClick={resetUpload} className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800">
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleUpload}
+                  disabled={subiendo || preview.columnas.every((c) => !c.sensor && !c.asignacionManual)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+                >
+                  {subiendo ? 'Procesando...' : 'Confirmar y cargar'}
+                </button>
+              </div>
+            </div>
+          )}
 
           {resultado && (
             <div className="mt-4 p-4 bg-green-50 border border-green-200 rounded-lg">
@@ -288,7 +511,6 @@ export default function TelemetriaPage() {
                 </p>
               )}
 
-              {/* Estadísticas de la ingesta */}
               <div className="mt-3 overflow-x-auto">
                 <table className="text-xs w-full">
                   <thead>
