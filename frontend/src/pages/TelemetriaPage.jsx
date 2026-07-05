@@ -675,11 +675,11 @@ export default function TelemetriaPage() {
                           {etiquetaCampo(campo)}
                         </td>
                         <td className="px-5 py-2.5 text-slate-400">{s.muestras}</td>
-                        <td className="px-5 py-2.5 text-slate-600">{s.min}</td>
-                        <td className="px-5 py-2.5 text-slate-600">{s.max}</td>
-                        <td className="px-5 py-2.5 font-semibold text-blue-600">{s.media}</td>
-                        <td className="px-5 py-2.5 text-slate-600">{s.mediana}</td>
-                        <td className="px-5 py-2.5 text-slate-600">{s.moda}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{formatearNumero(s.min)}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{formatearNumero(s.max)}</td>
+                        <td className="px-5 py-2.5 font-semibold text-blue-600">{formatearNumero(s.media)}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{formatearNumero(s.mediana)}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{formatearNumero(s.moda)}</td>
                       </tr>
                     );
                   })}

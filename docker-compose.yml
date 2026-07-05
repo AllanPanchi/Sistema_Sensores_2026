@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # --- BASE DE DATOS RELACIONAL MULTIDOMINIO ---
   postgres:
@@ -14,6 +12,12 @@ services:
       - postgres_data:/var/lib/postgresql/data
       # Mapea la carpeta completa (incluyendo el script .sh y la subcarpeta sql)
       - ./init_db:/docker-entrypoint-initdb.d/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: always
 
   # --- BASE DE DATOS SERIES DE TIEMPO (Telemetría de los Sensores) ---
@@ -32,7 +36,52 @@ services:
     volumes:
       - influxdb_data:/var/lib/influxdb2
       - influxdb_config:/etc/influxdb2
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:8086/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: always
+
+  # --- BACKEND (API Node.js + Express) ---
+  backend:
+    build: ./backend
+    container_name: hidrosentinel_backend
+    # Carga todas las variables del .env y sobrescribe las que difieren dentro
+    # de la red de Docker (los servicios se resuelven por nombre, no por host).
+    env_file: .env
+    environment:
+      - NODE_ENV=production
+      - PG_HOST=postgres
+      - PG_PORT=5432
+      - INFLUXDB_URL=http://influxdb:8086
+      - CORS_ORIGIN=*
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      influxdb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://localhost:3000/api/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  # --- FRONTEND (React compilado, servido por nginx con proxy /api) ---
+  frontend:
+    build: ./frontend
+    container_name: hidrosentinel_frontend
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres_data:
