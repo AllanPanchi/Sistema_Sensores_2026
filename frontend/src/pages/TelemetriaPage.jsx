@@ -289,6 +289,39 @@ export default function TelemetriaPage() {
       .filter((m) => typeof m[campo] === 'number')
       .map((m) => ({ fecha: m.fecha, valor: m[campo] }));
 
+  // Estadísticas descriptivas de un campo sobre el rango actualmente cargado
+  const calcularEstadisticas = (campo) => {
+    const valores = mediciones
+      .map((m) => m[campo])
+      .filter((v) => typeof v === 'number');
+    if (valores.length === 0) return null;
+
+    const sorted = [...valores].sort((a, b) => a - b);
+    const n = sorted.length;
+    const media = valores.reduce((s, v) => s + v, 0) / n;
+    const mediana = n % 2 === 0
+      ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
+      : sorted[Math.floor(n / 2)];
+
+    const freq = new Map();
+    let moda = valores[0], maxFreq = 0;
+    for (const v of valores) {
+      const f = (freq.get(v) ?? 0) + 1;
+      freq.set(v, f);
+      if (f > maxFreq) { maxFreq = f; moda = v; }
+    }
+
+    const fmt = (v) => Math.round(v * 10000) / 10000;
+    return {
+      min:      fmt(sorted[0]),
+      max:      fmt(sorted[n - 1]),
+      media:    fmt(media),
+      mediana:  fmt(mediana),
+      moda:     fmt(moda),
+      muestras: n,
+    };
+  };
+
   return (
     <div className="p-4 md:p-8">
       <div className="mb-6">
@@ -610,6 +643,50 @@ export default function TelemetriaPage() {
               </div>
             </div>
           )}
+
+          {/* Estadísticas del período seleccionado */}
+          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden mb-6">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-baseline justify-between">
+              <h3 className="text-sm font-semibold text-slate-700">Estadísticas del período</h3>
+              <span className="text-xs text-slate-400">
+                {RANGOS.find((r) => r.valor === horas)?.etiqueta} · {mediciones.length} puntos
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-right text-slate-500 text-xs border-b border-slate-100">
+                    <th className="px-5 py-2.5 font-medium text-left">Sensor</th>
+                    <th className="px-5 py-2.5 font-medium">Muestras</th>
+                    <th className="px-5 py-2.5 font-medium">Mín</th>
+                    <th className="px-5 py-2.5 font-medium">Máx</th>
+                    <th className="px-5 py-2.5 font-medium">Media</th>
+                    <th className="px-5 py-2.5 font-medium">Mediana</th>
+                    <th className="px-5 py-2.5 font-medium">Moda</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campos.map((campo) => {
+                    const s = calcularEstadisticas(campo);
+                    if (!s) return null;
+                    return (
+                      <tr key={campo} className="border-b border-slate-50 last:border-0 hover:bg-slate-50 text-right">
+                        <td className="px-5 py-2.5 text-left font-medium text-slate-700">
+                          {etiquetaCampo(campo)}
+                        </td>
+                        <td className="px-5 py-2.5 text-slate-400">{s.muestras}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{s.min}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{s.max}</td>
+                        <td className="px-5 py-2.5 font-semibold text-blue-600">{s.media}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{s.mediana}</td>
+                        <td className="px-5 py-2.5 text-slate-600">{s.moda}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
           {/* Vista de tabla (accesibilidad: los datos siempre legibles como texto) */}
           <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
