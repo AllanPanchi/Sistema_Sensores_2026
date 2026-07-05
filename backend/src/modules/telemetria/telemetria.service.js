@@ -283,26 +283,15 @@ export const consultarTelemetria = async (idboya, { horas, limite } = {}) => {
 // reciente es la medición.
 const DIAS_VENTANA_ALERTAS = 365;
 
-// Clasifica un valor según los límites del sensor. La invariante del dominio es
-// rangooperativomin < umbralriesgomin < umbralriesgomax < rangooperativomax:
-//   NORMAL   → dentro de la banda de umbrales [umbralriesgomin, umbralriesgomax]
-//   RIESGO   → dentro del rango operativo pero fuera de la banda segura
-//   ANOMALIA → fuera del rango operativo físico (posible fallo o extremo)
 const clasificarValor = (valor, sensor) => {
-  const roMin = parseFloat(sensor.rangooperativomin);
-  const roMax = parseFloat(sensor.rangooperativomax);
   const urMin = parseFloat(sensor.umbralriesgomin);
   const urMax = parseFloat(sensor.umbralriesgomax);
-  if (valor < roMin || valor > roMax) return 'ANOMALIA';
   if (valor < urMin || valor > urMax) return 'RIESGO';
   return 'NORMAL';
 };
 
-const construirMensaje = (nivel, valor, sensor) => {
+const construirMensaje = (valor, sensor) => {
   const u = sensor.nomenclatura ? ` ${sensor.nomenclatura}` : '';
-  if (nivel === 'ANOMALIA') {
-    return `Lectura ${valor}${u} fuera del rango operativo [${sensor.rangooperativomin}, ${sensor.rangooperativomax}]`;
-  }
   const bajoDelMin = valor < parseFloat(sensor.umbralriesgomin);
   const limite     = bajoDelMin ? sensor.umbralriesgomin : sensor.umbralriesgomax;
   const direccion  = bajoDelMin ? 'por debajo' : 'por encima';
@@ -335,27 +324,20 @@ export const evaluarAlertas = async () => {
         unidad:  sensor.nomenclatura,
         valor:   medicion.valor,
         nivel,
-        mensaje: construirMensaje(nivel, medicion.valor, sensor),
+        mensaje: construirMensaje(medicion.valor, sensor),
         limites: {
-          rangooperativomin: Number(sensor.rangooperativomin),
-          umbralriesgomin:   Number(sensor.umbralriesgomin),
-          umbralriesgomax:   Number(sensor.umbralriesgomax),
-          rangooperativomax: Number(sensor.rangooperativomax),
+          umbralriesgomin: Number(sensor.umbralriesgomin),
+          umbralriesgomax: Number(sensor.umbralriesgomax),
         },
         fecha:   medicion.fecha,
       });
     }
   }
 
-  // Anomalías primero, luego riesgos
-  const orden = { ANOMALIA: 0, RIESGO: 1 };
-  alertas.sort((a, b) => orden[a.nivel] - orden[b.nivel]);
-
   return {
     total: alertas.length,
     resumen: {
-      anomalias: alertas.filter((a) => a.nivel === 'ANOMALIA').length,
-      riesgos:   alertas.filter((a) => a.nivel === 'RIESGO').length,
+      riesgos: alertas.length,
     },
     alertas,
   };

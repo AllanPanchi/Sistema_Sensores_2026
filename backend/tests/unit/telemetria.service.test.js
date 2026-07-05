@@ -231,13 +231,11 @@ describe('consultarTelemetria — sanitización de parámetros', () => {
   });
 });
 
-// ── Evaluación de alertas: clasificación por rangos y umbrales ──────────────
+// ── Evaluación de alertas: clasificación por umbrales ───────────────────────
 describe('evaluarAlertas — clasificación de lecturas', () => {
-  // Sensor de pH con la invariante rangoMin < umbralMin < umbralMax < rangoMax
   const SENSOR_PH = {
     idsensor: 2, nombresensor: 'Ph', nomenclatura: 'pH',
-    rangooperativomin: '0', umbralriesgomin: '6.5',
-    umbralriesgomax: '9', rangooperativomax: '14',
+    umbralriesgomin: '6.5', umbralriesgomax: '9',
   };
 
   // Configura una sola boya con un sensor y su último valor
@@ -255,45 +253,36 @@ describe('evaluarAlertas — clasificación de lecturas', () => {
     expect(res.total).toBe(0);
   });
 
-  test('valor fuera de la banda pero dentro del rango operativo → RIESGO', async () => {
-    escenario(SENSOR_PH, 9.6); // > 9 (umbral) pero < 14 (rango)
+  test('valor fuera de la banda de umbrales → RIESGO', async () => {
+    escenario(SENSOR_PH, 9.6); // > 9 (umbralriesgomax)
     const res = await service.evaluarAlertas();
     expect(res.total).toBe(1);
-    expect(res.resumen).toEqual({ anomalias: 0, riesgos: 1 });
+    expect(res.resumen).toEqual({ riesgos: 1 });
     expect(res.alertas[0].nivel).toBe('RIESGO');
     expect(res.alertas[0].mensaje).toContain('por encima del umbral');
   });
 
-  test('valor fuera del rango operativo → ANOMALIA', async () => {
-    escenario(SENSOR_PH, 15); // > 14 (rango operativo)
-    const res = await service.evaluarAlertas();
-    expect(res.resumen).toEqual({ anomalias: 1, riesgos: 0 });
-    expect(res.alertas[0].nivel).toBe('ANOMALIA');
-    expect(res.alertas[0].mensaje).toContain('fuera del rango operativo');
-  });
-
   test('valor por debajo del umbral mínimo → RIESGO con dirección correcta', async () => {
-    escenario(SENSOR_PH, 3); // < 6.5 (umbral) pero > 0 (rango)
+    escenario(SENSOR_PH, 3); // < 6.5 (umbralriesgomin)
     const res = await service.evaluarAlertas();
     expect(res.alertas[0].nivel).toBe('RIESGO');
     expect(res.alertas[0].mensaje).toContain('por debajo del umbral');
   });
 
-  test('anomalías se ordenan antes que riesgos', async () => {
+  test('múltiples sensores en riesgo se acumulan', async () => {
     boyasRepo.findAllBoyas.mockResolvedValue([{ idboya: 3, nombre: 'Boya Test' }]);
     boyasRepo.findSensoresByBoya.mockResolvedValue([
       SENSOR_PH,
       { ...SENSOR_PH, idsensor: 1, nombresensor: 'Temp1', nomenclatura: '°C',
-        rangooperativomin: '0', umbralriesgomin: '10', umbralriesgomax: '35', rangooperativomax: '50' },
+        umbralriesgomin: '10', umbralriesgomax: '35' },
     ]);
     telemetriaRepo.queryUltimosValores.mockResolvedValue([
       { campo: 'ph',    valor: 9.6, fecha: '2026-06-11T13:00:00Z' }, // RIESGO
-      { campo: 'temp1', valor: 55,  fecha: '2026-06-11T13:00:00Z' }, // ANOMALIA
+      { campo: 'temp1', valor: 40,  fecha: '2026-06-11T13:00:00Z' }, // RIESGO
     ]);
     const res = await service.evaluarAlertas();
     expect(res.total).toBe(2);
-    expect(res.alertas[0].nivel).toBe('ANOMALIA'); // primero
-    expect(res.alertas[1].nivel).toBe('RIESGO');
+    expect(res.resumen).toEqual({ riesgos: 2 });
   });
 
   test('un sensor sin datos de telemetría no genera alerta', async () => {

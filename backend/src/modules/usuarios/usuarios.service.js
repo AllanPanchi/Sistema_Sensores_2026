@@ -1,6 +1,7 @@
 import bcrypt from 'bcryptjs';
 import { AppError } from '../../middlewares/error.middleware.js';
 import * as repo from './usuarios.repository.js';
+import { validarCedula } from '../../utils/cedula.js';
 
 export const listarUsuarios = () => repo.findAll();
 
@@ -18,6 +19,9 @@ export const obtenerPerfil = (userId) => obtenerUsuario(userId);
 export const actualizarUsuario = async (id, { nombre, apellido, cedula }) => {
   if (!nombre?.trim() || !apellido?.trim() || !cedula?.trim()) {
     throw new AppError('nombre, apellido y cedula son requeridos', 400);
+  }
+  if (!validarCedula(cedula.trim())) {
+    throw new AppError('La cédula ecuatoriana ingresada no es válida', 400);
   }
   const usuario = await repo.update(id, { nombre, apellido, cedula });
   if (!usuario) throw new AppError(`Usuario con ID ${id} no encontrado`, 404);

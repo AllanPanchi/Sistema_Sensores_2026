@@ -105,7 +105,7 @@ router.get('/:id', ...)        // ← this would swallow /perfil and /roles
 router.get('/perfil', ...)     // ← must be first
 ```
 
-**Sensor range constraint**: `umbralriesgomin ≤ rangooperativomin < rangooperativomax ≤ umbralriesgomax`. The risk threshold wraps outside the operational range. Validated in `boyas.service.js:validarRangos`.
+**Sensor threshold constraint**: `umbralriesgomin < umbralriesgomax`. Validated in `boyas.service.js:validarUmbrales`.
 
 **FK constraints to handle explicitly**:
 - `SENSOR → BOYA` (`ON DELETE RESTRICT`): service checks `countSensoresByBoya` before delete → returns `409`.

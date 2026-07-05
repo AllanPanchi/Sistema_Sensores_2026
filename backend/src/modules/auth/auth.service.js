@@ -2,6 +2,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { AppError } from '../../middlewares/error.middleware.js';
 import * as repo from './auth.repository.js';
+import { validarCedula } from '../../utils/cedula.js';
 
 export const login = async (correo, password) => {
   if (!correo || !password) {
@@ -36,6 +37,9 @@ export const login = async (correo, password) => {
 export const register = async ({ nombre, apellido, correo, cedula, password, rol = 'OPERADOR' }) => {
   if (!nombre || !apellido || !correo || !cedula || !password) {
     throw new AppError('Todos los campos son requeridos', 400);
+  }
+  if (!validarCedula(cedula.trim())) {
+    throw new AppError('La cédula ecuatoriana ingresada no es válida', 400);
   }
   if (password.length < 8) {
     throw new AppError('La contraseña debe tener al menos 8 caracteres', 400);

@@ -1,39 +1,21 @@
 import { AppError } from '../../middlewares/error.middleware.js';
 import * as repo from './boyas.repository.js';
 
-// ── Helper: validación de rangos operativos ────────────────────────────────
-// Invariante del dominio:
-//   umbralriesgomin ≤ rangooperativomin < rangooperativomax ≤ umbralriesgomax
-// El umbral de riesgo "envuelve" al rango operativo normal por fuera.
-const validarRangos = ({ rangooperativomin, rangooperativomax, umbralriesgomin, umbralriesgomax }) => {
-  const min = parseFloat(rangooperativomin);
-  const max = parseFloat(rangooperativomax);
+const validarUmbrales = ({ umbralriesgomin, umbralriesgomax }) => {
   const uMin = parseFloat(umbralriesgomin);
   const uMax = parseFloat(umbralriesgomax);
   const errors = [];
 
-  if ([min, max, uMin, uMax].some(Number.isNaN)) {
-    errors.push('Todos los rangos y umbrales deben ser valores numéricos.');
-  }
-
-  if (min >= max) {
-    errors.push('rangooperativomin debe ser menor que rangooperativomax.');
+  if ([uMin, uMax].some(Number.isNaN)) {
+    errors.push('Los umbrales deben ser valores numéricos.');
   }
 
   if (uMin >= uMax) {
     errors.push('umbralriesgomin debe ser menor que umbralriesgomax.');
   }
 
-  if (uMin <= min) {
-    errors.push('umbralriesgomin debe ser mayor que rangooperativomin.');
-  }
-
-  if (uMax >= max) {
-    errors.push('umbralriesgomax debe ser menor que rangooperativomax.');
-  }
-
   if (errors.length) {
-    throw new AppError('Rangos operativos inválidos', 400, errors);
+    throw new AppError('Umbrales de riesgo inválidos', 400, errors);
   }
 };
 
@@ -89,19 +71,18 @@ export const crearSensor = async (idboya, datos) => {
 
   const {
     idunidad, nombresensor,
-    rangooperativomin, umbralriesgomin,
-    rangooperativomax, umbralriesgomax,
+    umbralriesgomin, umbralriesgomax,
     estado = true,
   } = datos;
 
   if (!idunidad || !nombresensor?.trim()) {
     throw new AppError('idunidad y nombresensor son requeridos', 400);
   }
-  if ([rangooperativomin, umbralriesgomin, rangooperativomax, umbralriesgomax].some((v) => v === undefined || v === null)) {
-    throw new AppError('Todos los rangos y umbrales son requeridos', 400);
+  if ([umbralriesgomin, umbralriesgomax].some((v) => v === undefined || v === null)) {
+    throw new AppError('Los umbrales de riesgo son requeridos', 400);
   }
 
-  validarRangos({ rangooperativomin, rangooperativomax, umbralriesgomin, umbralriesgomax });
+  validarUmbrales({ umbralriesgomin, umbralriesgomax });
 
   const unidad = await repo.findUnidadById(idunidad);
   if (!unidad) throw new AppError(`Unidad de medida con ID ${idunidad} no encontrada`, 404);
@@ -109,8 +90,7 @@ export const crearSensor = async (idboya, datos) => {
   return repo.createSensor({
     idboya: parseInt(idboya, 10),
     idunidad, nombresensor,
-    rangooperativomin, umbralriesgomin,
-    rangooperativomax, umbralriesgomax,
+    umbralriesgomin, umbralriesgomax,
     estado,
   });
 };
@@ -123,30 +103,28 @@ export const actualizarSensor = async (idboya, sensorId, datos) => {
 
   const {
     idunidad, nombresensor,
-    rangooperativomin, umbralriesgomin,
-    rangooperativomax, umbralriesgomax,
+    umbralriesgomin, umbralriesgomax,
     estado,
   } = datos;
 
   if (!idunidad || !nombresensor?.trim()) {
     throw new AppError('idunidad y nombresensor son requeridos', 400);
   }
-  if ([rangooperativomin, umbralriesgomin, rangooperativomax, umbralriesgomax].some((v) => v === undefined || v === null)) {
-    throw new AppError('Todos los rangos y umbrales son requeridos', 400);
+  if ([umbralriesgomin, umbralriesgomax].some((v) => v === undefined || v === null)) {
+    throw new AppError('Los umbrales de riesgo son requeridos', 400);
   }
   if (estado === undefined || estado === null) {
     throw new AppError('El estado del sensor es requerido', 400);
   }
 
-  validarRangos({ rangooperativomin, rangooperativomax, umbralriesgomin, umbralriesgomax });
+  validarUmbrales({ umbralriesgomin, umbralriesgomax });
 
   const unidad = await repo.findUnidadById(idunidad);
   if (!unidad) throw new AppError(`Unidad de medida con ID ${idunidad} no encontrada`, 404);
 
   return repo.updateSensor(sensorId, {
     idunidad, nombresensor,
-    rangooperativomin, umbralriesgomin,
-    rangooperativomax, umbralriesgomax,
+    umbralriesgomin, umbralriesgomax,
     estado,
   });
 };

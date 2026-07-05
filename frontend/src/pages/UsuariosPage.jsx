@@ -2,6 +2,22 @@ import { useState, useEffect, useCallback } from 'react';
 import * as api from '../api/usuarios.api';
 import { register } from '../api/auth.api';
 
+const validarCedula = (cedula) => {
+  if (!/^\d{10}$/.test(cedula)) return false;
+  const provincia = parseInt(cedula.substring(0, 2), 10);
+  if (provincia < 1 || (provincia > 24 && provincia !== 30)) return false;
+  if (parseInt(cedula[2], 10) > 5) return false;
+  const coef = [2, 1, 2, 1, 2, 1, 2, 1, 2];
+  let suma = 0;
+  for (let i = 0; i < 9; i++) {
+    let v = parseInt(cedula[i], 10) * coef[i];
+    if (v >= 10) v -= 9;
+    suma += v;
+  }
+  const verificador = suma % 10 === 0 ? 0 : 10 - (suma % 10);
+  return verificador === parseInt(cedula[9], 10);
+};
+
 // ── Componentes reutilizables ──────────────────────────────────────────────
 
 function Field({ label, value, onChange, type = 'text' }) {
@@ -100,6 +116,13 @@ export default function UsuariosPage() {
   const handleSave = async () => {
     setSaving(true);
     setFormError('');
+
+    if ((modal === 'create' || modal === 'edit') && !validarCedula(form.cedula?.trim() ?? '')) {
+      setFormError('La cédula ecuatoriana ingresada no es válida');
+      setSaving(false);
+      return;
+    }
+
     try {
       if (modal === 'create') {
         await register(form);

@@ -32,8 +32,6 @@ export const findBoyaById = async (id) => {
              'idunidad',          s.idunidad,
              'unidad',            u.nombreunidad,
              'nomenclatura',      u.nomenclatura,
-             'rangooperativomin', s.rangooperativomin,
-             'rangooperativomax', s.rangooperativomax,
              'umbralriesgomin',   s.umbralriesgomin,
              'umbralriesgomax',   s.umbralriesgomax,
              'estado',            s.estado
@@ -95,8 +93,6 @@ export const findSensoresByBoya = async (idboya) => {
        s.idunidad,
        u.nombreunidad,
        u.nomenclatura,
-       s.rangooperativomin,
-       s.rangooperativomax,
        s.umbralriesgomin,
        s.umbralriesgomax,
        s.estado
@@ -117,8 +113,6 @@ export const findSensorById = async (idsensor, idboya) => {
        s.idunidad,
        u.nombreunidad,
        u.nomenclatura,
-       s.rangooperativomin,
-       s.rangooperativomax,
        s.umbralriesgomin,
        s.umbralriesgomax,
        s.estado
@@ -132,44 +126,37 @@ export const findSensorById = async (idsensor, idboya) => {
 
 export const createSensor = async ({
   idboya, idunidad, nombresensor,
-  rangooperativomin, umbralriesgomin,
-  rangooperativomax, umbralriesgomax,
+  umbralriesgomin, umbralriesgomax,
   estado,
 }) => {
   const { rows } = await pool.query(
     `INSERT INTO sensor
        (idboya, idunidad, nombresensor,
-        rangooperativomin, umbralriesgomin,
-        rangooperativomax, umbralriesgomax, estado)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        umbralriesgomin, umbralriesgomax, estado)
+     VALUES ($1, $2, $3, $4, $5, $6)
      RETURNING *`,
     [idboya, idunidad, nombresensor.trim(),
-     rangooperativomin, umbralriesgomin,
-     rangooperativomax, umbralriesgomax, estado]
+     umbralriesgomin, umbralriesgomax, estado]
   );
   return rows[0];
 };
 
 export const updateSensor = async (idsensor, {
   idunidad, nombresensor,
-  rangooperativomin, umbralriesgomin,
-  rangooperativomax, umbralriesgomax,
+  umbralriesgomin, umbralriesgomax,
   estado,
 }) => {
   const { rows } = await pool.query(
     `UPDATE sensor SET
-       idunidad          = $1,
-       nombresensor      = $2,
-       rangooperativomin = $3,
-       umbralriesgomin   = $4,
-       rangooperativomax = $5,
-       umbralriesgomax   = $6,
-       estado            = $7
-     WHERE idsensor = $8
+       idunidad        = $1,
+       nombresensor    = $2,
+       umbralriesgomin = $3,
+       umbralriesgomax = $4,
+       estado          = $5
+     WHERE idsensor = $6
      RETURNING *`,
     [idunidad, nombresensor.trim(),
-     rangooperativomin, umbralriesgomin,
-     rangooperativomax, umbralriesgomax,
+     umbralriesgomin, umbralriesgomax,
      estado, idsensor]
   );
   return rows[0] ?? null;

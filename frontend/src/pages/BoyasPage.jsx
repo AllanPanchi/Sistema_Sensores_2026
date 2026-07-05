@@ -145,10 +145,8 @@ function UnidadesModal({ unidades, onClose, onRefresh }) {
 const SENSOR_EMPTY = {
   nombresensor: '',
   idunidad: '',
-  rangooperativomin: '',
   umbralriesgomin: '',
   umbralriesgomax: '',
-  rangooperativomax: '',
   estado: true,
 };
 
@@ -265,10 +263,8 @@ export default function BoyasPage() {
       const payload = {
         nombresensor: form.nombresensor,
         idunidad: parseInt(form.idunidad, 10),
-        rangooperativomin: parseFloat(form.rangooperativomin),
-        umbralriesgomin:   parseFloat(form.umbralriesgomin),
-        umbralriesgomax:   parseFloat(form.umbralriesgomax),
-        rangooperativomax: parseFloat(form.rangooperativomax),
+        umbralriesgomin: parseFloat(form.umbralriesgomin),
+        umbralriesgomax: parseFloat(form.umbralriesgomax),
         estado: form.estado,
       };
       if (modal === 'sensor-create') {
@@ -405,12 +401,10 @@ export default function BoyasPage() {
                           <p className="text-xs text-slate-500 mt-0.5 leading-relaxed">
                             {s.nombreunidad} ({s.nomenclatura})
                             <span className="hidden sm:inline">
-                              {' · '}Operativo: [{s.rangooperativomin} – {s.rangooperativomax}]
                               {' · '}Riesgo: [{s.umbralriesgomin} – {s.umbralriesgomax}]
                             </span>
                             <span className="sm:hidden block mt-0.5">
-                              Op: [{s.rangooperativomin}–{s.rangooperativomax}]
-                              {' '}Riesgo: [{s.umbralriesgomin}–{s.umbralriesgomax}]
+                              Riesgo: [{s.umbralriesgomin}–{s.umbralriesgomax}]
                             </span>
                           </p>
                         </div>
@@ -527,15 +521,7 @@ export default function BoyasPage() {
               </select>
             </div>
             <div>
-              <p className="text-xs text-slate-500 mb-2">
-                Orden: <strong>rango min &lt; umbral min &lt; umbral max &lt; rango max</strong>
-              </p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <NumField
-                  label="Rango operativo mín"
-                  value={form.rangooperativomin}
-                  onChange={(v) => setForm({ ...form, rangooperativomin: v })}
-                />
                 <NumField
                   label="Umbral de riesgo mín"
                   value={form.umbralriesgomin}
@@ -545,11 +531,6 @@ export default function BoyasPage() {
                   label="Umbral de riesgo máx"
                   value={form.umbralriesgomax}
                   onChange={(v) => setForm({ ...form, umbralriesgomax: v })}
-                />
-                <NumField
-                  label="Rango operativo máx"
-                  value={form.rangooperativomax}
-                  onChange={(v) => setForm({ ...form, rangooperativomax: v })}
                 />
               </div>
             </div>
