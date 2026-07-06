@@ -95,7 +95,19 @@ export const findSensoresByBoya = async (idboya) => {
        u.nomenclatura,
        s.umbralriesgomin,
        s.umbralriesgomax,
-       s.estado
+       s.estado,
+       COALESCE(
+         (SELECT json_agg(
+            json_build_object(
+              'idindicador', i.idindicador,
+              'etiqueta',    i.etiqueta,
+              'valormin',    i.valormin,
+              'valormax',    i.valormax,
+              'color',       i.color
+            ) ORDER BY i.valormin
+          ) FROM indicador i WHERE i.idsensor = s.idsensor),
+         '[]'::json
+       ) AS indicadores
      FROM sensor s
      LEFT JOIN unidadesmedida u ON u.idunidad = s.idunidad
      WHERE s.idboya = $1
@@ -205,6 +217,37 @@ export const deleteUnidad = async (id) => {
   const { rows } = await pool.query(
     `DELETE FROM unidadesmedida WHERE idunidad = $1 RETURNING idunidad`,
     [id]
+  );
+  return rows[0] ?? null;
+};
+
+// ── Indicadores (niveles cualitativos por sensor) ──────────────────────────
+
+export const findIndicadoresBySensor = async (idsensor) => {
+  const { rows } = await pool.query(
+    `SELECT idindicador, idsensor, etiqueta, valormin, valormax, color
+     FROM indicador
+     WHERE idsensor = $1
+     ORDER BY valormin`,
+    [idsensor]
+  );
+  return rows;
+};
+
+export const createIndicador = async ({ idsensor, etiqueta, valormin, valormax, color }) => {
+  const { rows } = await pool.query(
+    `INSERT INTO indicador (idsensor, etiqueta, valormin, valormax, color)
+     VALUES ($1, $2, $3, $4, $5)
+     RETURNING *`,
+    [idsensor, etiqueta.trim(), valormin, valormax, color.trim()]
+  );
+  return rows[0];
+};
+
+export const deleteIndicador = async (idindicador, idsensor) => {
+  const { rows } = await pool.query(
+    `DELETE FROM indicador WHERE idindicador = $1 AND idsensor = $2 RETURNING idindicador`,
+    [idindicador, idsensor]
   );
   return rows[0] ?? null;
 };

@@ -140,6 +140,152 @@ function UnidadesModal({ unidades, onClose, onRefresh }) {
   );
 }
 
+// ── Modal de Indicadores (niveles cualitativos por sensor) ─────────────────
+
+const PALETA = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#6366f1', '#a855f7'];
+const IND_EMPTY = { etiqueta: '', valormin: '', valormax: '', color: '#22c55e' };
+
+function IndicadoresModal({ boyaId, sensor, onClose, onRefresh }) {
+  const [indicadores, setIndicadores] = useState(sensor.indicadores ?? []);
+  const [form, setForm] = useState(IND_EMPTY);
+  const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const recargar = async () => {
+    const res = await api.getIndicadores(boyaId, sensor.idsensor);
+    setIndicadores(res.data.data);
+    onRefresh();
+  };
+
+  const handleCreate = async () => {
+    setSaving(true);
+    setError('');
+    try {
+      await api.createIndicador(boyaId, sensor.idsensor, {
+        etiqueta: form.etiqueta,
+        valormin: parseFloat(form.valormin),
+        valormax: parseFloat(form.valormax),
+        color: form.color,
+      });
+      setForm(IND_EMPTY);
+      await recargar();
+    } catch (err) {
+      const errs = err.response?.data?.errors;
+      setError(Array.isArray(errs) && errs.length ? errs.join('\n') : err.response?.data?.message || 'Error al crear');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    if (!confirm('¿Eliminar este nivel?')) return;
+    try {
+      await api.deleteIndicador(boyaId, sensor.idsensor, id);
+      await recargar();
+    } catch (err) {
+      alert(err.response?.data?.message || 'Error al eliminar');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50 p-0 sm:p-4">
+      <div className="bg-white rounded-t-2xl sm:rounded-xl shadow-xl w-full sm:max-w-md max-h-[90vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b">
+          <div>
+            <h3 className="text-base font-semibold text-slate-800">Niveles / Indicadores</h3>
+            <p className="text-xs text-slate-500">{sensor.nombresensor} · {sensor.nomenclatura}</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none">×</button>
+        </div>
+        <div className="p-5 overflow-y-auto flex-1">
+          {error && (
+            <div className="mb-3 p-3 bg-red-50 border border-red-200 text-red-700 rounded text-sm whitespace-pre-line">{error}</div>
+          )}
+
+          {/* Barra visual de niveles definidos */}
+          {indicadores.length > 0 && (
+            <div className="mb-4">
+              <div className="flex h-3 rounded-full overflow-hidden">
+                {indicadores.map((i) => (
+                  <div
+                    key={i.idindicador}
+                    className="flex-1"
+                    style={{ backgroundColor: i.color }}
+                    title={`${i.etiqueta} [${i.valormin}–${i.valormax}]`}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mb-4 divide-y divide-slate-100">
+            {indicadores.length === 0 && (
+              <p className="text-sm text-slate-400 py-2">Sin niveles definidos. Agrega el primero abajo.</p>
+            )}
+            {indicadores.map((i) => (
+              <div key={i.idindicador} className="flex items-center justify-between py-2.5">
+                <span className="flex items-center gap-2 text-sm text-slate-700 min-w-0">
+                  <span className="w-3.5 h-3.5 rounded-sm shrink-0" style={{ backgroundColor: i.color }} />
+                  <span className="font-medium truncate">{i.etiqueta}</span>
+                  <span className="text-slate-400">[{i.valormin} – {i.valormax}]</span>
+                </span>
+                <button
+                  onClick={() => handleDelete(i.idindicador)}
+                  className="text-xs text-red-500 hover:text-red-700 ml-2 shrink-0"
+                >
+                  Eliminar
+                </button>
+              </div>
+            ))}
+          </div>
+
+          <div className="pt-3 border-t space-y-3">
+            <p className="text-sm font-medium text-slate-700">Nuevo nivel</p>
+            <input
+              placeholder="Etiqueta (ej. Neutro, Ácido, Óptimo)"
+              value={form.etiqueta}
+              onChange={(e) => setForm({ ...form, etiqueta: e.target.value })}
+              className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <div className="grid grid-cols-2 gap-3">
+              <NumField label="Desde" value={form.valormin} onChange={(v) => setForm({ ...form, valormin: v })} />
+              <NumField label="Hasta" value={form.valormax} onChange={(v) => setForm({ ...form, valormax: v })} />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-600 mb-1.5">Color</label>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {PALETA.map((c) => (
+                  <button
+                    key={c}
+                    onClick={() => setForm({ ...form, color: c })}
+                    className={`w-7 h-7 rounded-full transition-transform ${form.color === c ? 'ring-2 ring-offset-2 ring-slate-400 scale-110' : ''}`}
+                    style={{ backgroundColor: c }}
+                    aria-label={`Color ${c}`}
+                  />
+                ))}
+                <input
+                  type="color"
+                  value={form.color}
+                  onChange={(e) => setForm({ ...form, color: e.target.value })}
+                  className="w-7 h-7 rounded cursor-pointer border border-slate-200 ml-1"
+                  aria-label="Color personalizado"
+                />
+              </div>
+            </div>
+            <button
+              onClick={handleCreate}
+              disabled={saving}
+              className="w-full py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {saving ? 'Agregando...' : '+ Agregar nivel'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Página principal ───────────────────────────────────────────────────────
 
 const SENSOR_EMPTY = {
@@ -296,6 +442,13 @@ export default function BoyasPage() {
     }
   };
 
+  // ── Indicadores ────────────────────────────────────────────────────────
+  const openIndicadoresModal = (boya, sensor) => {
+    setSelectedBoya(boya);
+    setSelectedSensor(sensor);
+    setModal('indicadores');
+  };
+
   if (loading) return <div className="p-4 md:p-8 text-slate-500 text-sm">Cargando boyas...</div>;
 
   return (
@@ -420,6 +573,12 @@ export default function BoyasPage() {
                           </span>
                           {isAdmin && (
                             <>
+                              <button
+                                onClick={() => openIndicadoresModal(boya, s)}
+                                className="px-2.5 py-1 text-xs bg-indigo-100 hover:bg-indigo-200 text-indigo-700 rounded transition-colors"
+                              >
+                                Niveles{s.indicadores?.length ? ` (${s.indicadores.length})` : ''}
+                              </button>
                               <button
                                 onClick={() => openSensorModal('sensor-edit', boya, s)}
                                 className="px-2.5 py-1 text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
@@ -553,6 +712,16 @@ export default function BoyasPage() {
           unidades={unidades}
           onClose={() => setModal(null)}
           onRefresh={fetchAll}
+        />
+      )}
+
+      {/* ── Modal Indicadores ─────────────────────────────────────────────────── */}
+      {modal === 'indicadores' && selectedSensor && (
+        <IndicadoresModal
+          boyaId={selectedBoya.idboya}
+          sensor={selectedSensor}
+          onClose={() => setModal(null)}
+          onRefresh={() => loadSensores(selectedBoya.idboya)}
         />
       )}
     </div>

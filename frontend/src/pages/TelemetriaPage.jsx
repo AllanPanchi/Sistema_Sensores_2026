@@ -34,9 +34,65 @@ const formatearNumero = (valor) => {
   return typeof valor === 'number' ? valor.toFixed(2) : valor;
 };
 
+// Escapa texto de usuario antes de incrustarlo en el HTML del reporte
+const escapeHtml = (s) =>
+  String(s).replace(/[&<>"']/g, (c) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// ── Generadores de SVG como string (para el reporte exportable) ────────────
+const svgLineaStr = (puntos, notedFechas = new Set(), W = 560, H = 180) => {
+  const PAD = { t: 12, r: 14, b: 26, l: 46 };
+  const iw = W - PAD.l - PAD.r, ih = H - PAD.t - PAD.b;
+  const vals = puntos.map((p) => p.valor);
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) { min -= 1; max += 1; }
+  const x = (i) => PAD.l + (i / Math.max(puntos.length - 1, 1)) * iw;
+  const y = (v) => PAD.t + ih - ((v - min) / (max - min)) * ih;
+  const d = puntos.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.valor).toFixed(1)}`).join(' ');
+  // Marcadores ámbar sobre los puntos que tienen una nota asociada
+  const marks = puntos.map((p, i) => notedFechas.has(p.fecha)
+    ? `<circle cx="${x(i).toFixed(1)}" cy="${y(p.valor).toFixed(1)}" r="3.5" fill="#f59e0b" stroke="#fff" stroke-width="1.5"/>`
+    : '').join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="chart">
+    <line x1="${PAD.l}" y1="${y(max)}" x2="${W - PAD.r}" y2="${y(max)}" stroke="#e2e8f0"/>
+    <line x1="${PAD.l}" y1="${y(min)}" x2="${W - PAD.r}" y2="${y(min)}" stroke="#e2e8f0"/>
+    <text x="${PAD.l - 5}" y="${y(max) + 3}" text-anchor="end" font-size="10" fill="#94a3b8">${formatearNumero(max)}</text>
+    <text x="${PAD.l - 5}" y="${y(min) + 3}" text-anchor="end" font-size="10" fill="#94a3b8">${formatearNumero(min)}</text>
+    <text x="${PAD.l}" y="${H - 6}" font-size="9" fill="#94a3b8">${formatearFecha(puntos[0].fecha)}</text>
+    <text x="${W - PAD.r}" y="${H - 6}" text-anchor="end" font-size="9" fill="#94a3b8">${formatearFecha(puntos[puntos.length - 1].fecha)}</text>
+    <path d="${d}" fill="none" stroke="#2563eb" stroke-width="2" stroke-linejoin="round"/>
+    ${marks}
+  </svg>`;
+};
+
+const svgGaugeStr = (valor, indicadores) => {
+  if (!indicadores || indicadores.length === 0) return '';
+  const min = Math.min(...indicadores.map((i) => Number(i.valormin)));
+  const max = Math.max(...indicadores.map((i) => Number(i.valormax)));
+  const rango = max - min || 1;
+  const W = 560, H = 40, BY = 6, BH = 14;
+  let x = 0;
+  const segs = indicadores.map((i) => {
+    const w = ((Number(i.valormax) - Number(i.valormin)) / rango) * W;
+    const r = `<rect x="${x.toFixed(1)}" y="${BY}" width="${w.toFixed(1)}" height="${BH}" fill="${i.color}"/>`;
+    x += w; return r;
+  }).join('');
+  const pos = Math.max(0, Math.min(1, (valor - min) / rango)) * W;
+  const activo = indicadores.find((i) => valor >= Number(i.valormin) && valor <= Number(i.valormax));
+  return `<svg viewBox="0 0 ${W} ${H}" class="gauge">${segs}
+    <polygon points="${(pos - 5).toFixed(1)},${BY - 3} ${(pos + 5).toFixed(1)},${BY - 3} ${pos.toFixed(1)},${BY + 4}" fill="#1e293b"/>
+    <text x="0" y="${H - 3}" font-size="10" fill="#64748b">${min}</text>
+    <text x="${W}" y="${H - 3}" text-anchor="end" font-size="10" fill="#64748b">${max}</text>
+    ${activo ? `<text x="${W / 2}" y="${H - 3}" text-anchor="middle" font-size="11" font-weight="700" fill="${activo.color}">${activo.etiqueta}</text>` : ''}
+  </svg>`;
+};
+
 // ── Mini gráfico de línea (una serie por sensor, escala propia) ────────────
-function MiniChart({ nombre, puntos }) {
+// Con notas por punto: al hacer clic en un punto se abre un editor de observación.
+function MiniChart({ nombre, puntos, boyaId, notas = {}, onGuardarNota }) {
   const [hover, setHover] = useState(null); // { i, px, py }
+  const [sel, setSel] = useState(null);     // { i } punto seleccionado para nota
+  const [texto, setTexto] = useState('');
   const svgRef = useRef(null);
 
   const W = 300, H = 110;
@@ -56,13 +112,36 @@ function MiniChart({ nombre, puntos }) {
     .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(i).toFixed(1)},${y(p.valor).toFixed(1)}`)
     .join(' ');
 
-  const handleMove = (e) => {
+  const notaDe = (i) => notas[`${boyaId}|${nombre}|${puntos[i].fecha}`];
+
+  const idxDesdeEvento = (e) => {
     const rect = svgRef.current.getBoundingClientRect();
     const px = ((e.clientX - rect.left) / rect.width) * W;
     const frac = (px - PAD.left) / innerW;
     const i = Math.round(frac * (puntos.length - 1));
-    if (i < 0 || i >= puntos.length) return setHover(null);
+    return i < 0 || i >= puntos.length ? null : i;
+  };
+
+  const handleMove = (e) => {
+    const i = idxDesdeEvento(e);
+    if (i === null) return setHover(null);
     setHover({ i, px: x(i), py: y(puntos[i].valor) });
+  };
+
+  const handleClick = (e) => {
+    const i = idxDesdeEvento(e);
+    if (i === null) return;
+    setSel({ i });
+    setTexto(notaDe(i)?.texto ?? '');
+  };
+
+  const guardar = () => {
+    onGuardarNota(nombre, puntos[sel.i].fecha, puntos[sel.i].valor, texto);
+    setSel(null);
+  };
+  const eliminar = () => {
+    onGuardarNota(nombre, puntos[sel.i].fecha, puntos[sel.i].valor, '');
+    setSel(null);
   };
 
   const ultimo = puntos[puntos.length - 1];
@@ -77,9 +156,10 @@ function MiniChart({ nombre, puntos }) {
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
-          className="w-full cursor-crosshair"
+          className="w-full cursor-pointer"
           onMouseMove={handleMove}
           onMouseLeave={() => setHover(null)}
+          onClick={handleClick}
         >
           {/* Grid recesivo: solo min y max */}
           <line x1={PAD.left} y1={y(max)} x2={W - PAD.right} y2={y(max)} stroke="#e2e8f0" strokeWidth="1" />
@@ -97,6 +177,16 @@ function MiniChart({ nombre, puntos }) {
 
           {/* Serie */}
           <path d={path} fill="none" stroke="#2563eb" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+
+          {/* Marcadores ámbar en puntos con nota */}
+          {puntos.map((p, i) => notaDe(i)
+            ? <circle key={i} cx={x(i)} cy={y(p.valor)} r="3.5" fill="#f59e0b" stroke="#ffffff" strokeWidth="1.5" />
+            : null)}
+
+          {/* Punto seleccionado para editar nota */}
+          {sel && (
+            <circle cx={x(sel.i)} cy={y(puntos[sel.i].valor)} r="5" fill="none" stroke="#f59e0b" strokeWidth="2" />
+          )}
 
           {/* Capa hover: crosshair + punto */}
           {hover && (
@@ -117,6 +207,90 @@ function MiniChart({ nombre, puntos }) {
           </div>
         )}
       </div>
+
+      {/* Editor de nota del punto seleccionado */}
+      {sel ? (
+        <div className="mt-3 border-t border-slate-100 pt-3">
+          <div className="flex items-baseline justify-between mb-1.5">
+            <span className="text-xs font-semibold text-slate-600">
+              Nota · <span className="text-blue-600">{formatearNumero(puntos[sel.i].valor)}</span>{' '}
+              <span className="text-slate-400">{formatearFecha(puntos[sel.i].fecha)}</span>
+            </span>
+            <button onClick={() => setSel(null)} className="text-xs text-slate-400 hover:text-slate-600">
+              Cancelar
+            </button>
+          </div>
+          <textarea
+            value={texto}
+            onChange={(e) => setTexto(e.target.value)}
+            rows={2}
+            autoFocus
+            placeholder="Escribe una observación para este punto…"
+            className="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-none"
+          />
+          <div className="flex justify-end gap-2 mt-2">
+            {notaDe(sel.i) && (
+              <button onClick={eliminar} className="px-3 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                Eliminar
+              </button>
+            )}
+            <button
+              onClick={guardar}
+              disabled={!texto.trim()}
+              className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50"
+            >
+              Guardar nota
+            </button>
+          </div>
+        </div>
+      ) : (
+        <p className="mt-2 text-xs text-slate-400">
+          <span className="text-amber-500">●</span> Haz clic en un punto de la gráfica para dejar una nota.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// ── Gauge de niveles cualitativos (estilo escala de pH) ────────────────────
+// Barra segmentada por los indicadores del sensor con un marcador en el valor actual.
+function GaugeIndicadores({ valor, indicadores }) {
+  if (!indicadores || indicadores.length === 0 || typeof valor !== 'number') return null;
+
+  const min = Math.min(...indicadores.map((i) => Number(i.valormin)));
+  const max = Math.max(...indicadores.map((i) => Number(i.valormax)));
+  const rango = max - min || 1;
+  const pos = Math.max(0, Math.min(1, (valor - min) / rango));
+  const activo = indicadores.find(
+    (i) => valor >= Number(i.valormin) && valor <= Number(i.valormax)
+  );
+
+  return (
+    <div className="w-full mb-4">
+      <div className="relative">
+        <div className="flex h-2.5 rounded-full overflow-hidden">
+          {indicadores.map((i) => (
+            <div
+              key={i.idindicador}
+              style={{ width: `${((Number(i.valormax) - Number(i.valormin)) / rango) * 100}%`, backgroundColor: i.color }}
+              title={`${i.etiqueta} [${i.valormin}–${i.valormax}]`}
+            />
+          ))}
+        </div>
+        {/* Marcador del valor actual */}
+        <div className="absolute top-0 -translate-x-1/2 -translate-y-full" style={{ left: `${pos * 100}%` }}>
+          <div className="w-0 h-0" style={{ borderLeft: '5px solid transparent', borderRight: '5px solid transparent', borderTop: '7px solid #334155' }} />
+        </div>
+      </div>
+      <div className="flex justify-between mt-1.5 text-[10px] text-slate-400 font-medium">
+        <span>{min}</span>
+        <span>{max}</span>
+      </div>
+      {activo && (
+        <p className="text-xs font-bold mt-1" style={{ color: activo.color }}>
+          {activo.etiqueta}
+        </p>
+      )}
     </div>
   );
 }
@@ -131,6 +305,35 @@ export default function TelemetriaPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [sensorActivo, setSensorActivo] = useState(null);
+  const [sensoresBoya, setSensoresBoya] = useState([]);   // sensores con sus indicadores
+
+  // Notas por punto: { `${boyaId}|${campo}|${fecha}`: { boyaId, campo, fecha, valor, texto, creado } }
+  // Persistidas en localStorage — sobreviven recargas en el mismo navegador.
+  const NOTAS_KEY = 'hidrosentinel_notas';
+  const [notas, setNotas] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(NOTAS_KEY)) ?? {}; }
+    catch { return {}; }
+  });
+
+  const guardarNota = (campo, fecha, valor, texto) => {
+    setNotas((prev) => {
+      const k = `${boyaId}|${campo}|${fecha}`;
+      const next = { ...prev };
+      if (texto.trim()) {
+        next[k] = { boyaId, campo, fecha, valor, texto: texto.trim(), creado: prev[k]?.creado ?? new Date().toISOString() };
+      } else {
+        delete next[k];
+      }
+      localStorage.setItem(NOTAS_KEY, JSON.stringify(next));
+      return next;
+    });
+  };
+
+  // Notas de un campo en la boya actual, ordenadas cronológicamente
+  const notasCampo = (campo) =>
+    Object.values(notas)
+      .filter((n) => String(n.boyaId) === String(boyaId) && n.campo === campo)
+      .sort((a, b) => new Date(a.fecha) - new Date(b.fecha));
 
   // Subida de CSV
   const [archivo, setArchivo] = useState(null);
@@ -174,6 +377,21 @@ export default function TelemetriaPage() {
   }, [boyaId, horas]);
 
   useEffect(() => { cargarTelemetria(); }, [cargarTelemetria]);
+
+  // Carga los sensores (con sus indicadores) de la boya para dibujar los gauges
+  useEffect(() => {
+    if (!boyaId) { setSensoresBoya([]); return; }
+    getSensores(boyaId)
+      .then((res) => setSensoresBoya(res.data.data))
+      .catch(() => setSensoresBoya([]));
+  }, [boyaId]);
+
+  // Mapea un campo normalizado de telemetría a su sensor registrado (por nombre o unidad)
+  const sensorDeCampo = (campo) =>
+    sensoresBoya.find(
+      (s) => normalizarCampo(s.nombresensor) === campo
+        || (s.nomenclatura && normalizarCampo(s.nomenclatura) === campo)
+    ) ?? null;
 
   const resetUpload = () => {
     setArchivo(null);
@@ -322,6 +540,90 @@ export default function TelemetriaPage() {
     };
   };
 
+  // ── Exportar reporte único (HTML autocontenido con gráficos + toda la data) ──
+  const exportarReporte = () => {
+    const boya = boyas.find((b) => String(b.idboya) === boyaId);
+    const rango = RANGOS.find((r) => r.valor === horas)?.etiqueta ?? '';
+    const generado = new Date().toLocaleString('es-EC');
+    const camposConDatos = campos.filter((c) => seriePorCampo(c).length > 1);
+    const totalNotas = camposConDatos.reduce((s, c) => s + notasCampo(c).length, 0);
+
+    const secciones = camposConDatos.map((campo) => {
+      const serie = seriePorCampo(campo);
+      const sensor = sensorDeCampo(campo);
+      const est = calcularEstadisticas(campo);
+      const ultimo = serie[serie.length - 1].valor;
+      const ns = notasCampo(campo);
+      const notedFechas = new Set(ns.map((n) => n.fecha));
+      const notasHtml = ns.length
+        ? `<div class="notas">
+             <h3>Observaciones (${ns.length})</h3>
+             <ul>${ns.map((n) =>
+               `<li><span class="np">${formatearNumero(n.valor)} · ${formatearFecha(n.fecha)}</span> ${escapeHtml(n.texto)}</li>`
+             ).join('')}</ul>
+           </div>`
+        : '';
+      return `<section class="sensor">
+        <div class="sensor-head">
+          <h2>${etiquetaCampo(campo)}</h2>
+          <span class="ultimo">${formatearNumero(ultimo)}${sensor?.nomenclatura ? ` ${sensor.nomenclatura}` : ''}</span>
+        </div>
+        ${svgGaugeStr(ultimo, sensor?.indicadores)}
+        ${svgLineaStr(serie, notedFechas)}
+        <table class="stats">
+          <tr><th>Muestras</th><th>Mín</th><th>Máx</th><th>Media</th><th>Mediana</th><th>Moda</th></tr>
+          <tr><td>${est.muestras}</td><td>${est.min}</td><td>${est.max}</td><td>${est.media}</td><td>${est.mediana}</td><td>${est.moda}</td></tr>
+        </table>
+        ${notasHtml}
+      </section>`;
+    }).join('');
+
+    const filas = [...mediciones].reverse().map((m) =>
+      `<tr><td>${formatearFecha(m.fecha)}</td>${camposConDatos.map((c) => `<td>${formatearNumero(m[c])}</td>`).join('')}</tr>`
+    ).join('');
+
+    const html = `<!doctype html><html lang="es"><head><meta charset="utf-8">
+<title>Reporte HidroSentinel — ${boya?.nombre ?? 'Boya'}</title>
+<style>
+  *{box-sizing:border-box} body{font-family:system-ui,Segoe UI,Roboto,sans-serif;color:#1e293b;margin:0;padding:32px;max-width:820px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px} .meta{color:#64748b;font-size:13px;margin:0 0 24px}
+  .sensor{border:1px solid #e2e8f0;border-radius:12px;padding:18px;margin-bottom:18px;page-break-inside:avoid}
+  .sensor-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px}
+  .sensor-head h2{font-size:16px;margin:0} .ultimo{font-size:20px;font-weight:800;color:#2563eb}
+  svg.chart,svg.gauge{width:100%;height:auto;display:block;margin:6px 0}
+  table{width:100%;border-collapse:collapse;font-size:12px;margin-top:8px}
+  th,td{border:1px solid #e2e8f0;padding:5px 8px;text-align:center} th{background:#f8fafc;font-weight:600}
+  .stats th,.stats td{text-align:center}
+  .data{margin-top:12px} .data td:first-child,.data th:first-child{text-align:left;white-space:nowrap}
+  .notas{margin-top:12px;border-left:3px solid #f59e0b;background:#fffbeb;border-radius:0 8px 8px 0;padding:8px 14px}
+  .notas h3{font-size:13px;margin:0 0 6px;color:#b45309}
+  .notas ul{margin:0;padding-left:16px} .notas li{font-size:13px;margin:3px 0;color:#334155}
+  .notas .np{color:#b45309;font-weight:600;font-size:12px;margin-right:6px}
+  .btn{position:fixed;top:16px;right:16px;background:#2563eb;color:#fff;border:0;padding:10px 16px;border-radius:8px;font-size:14px;cursor:pointer}
+  @media print{.btn{display:none}}
+</style></head><body>
+<button class="btn" onclick="window.print()">Imprimir / Guardar PDF</button>
+<h1>HidroSentinel — Reporte de Telemetría</h1>
+<p class="meta">Boya: <strong>${boya?.nombre ?? '—'}</strong> · Período: ${rango} · Generado: ${generado} · ${mediciones.length} registros${totalNotas ? ` · ${totalNotas} observación(es)` : ''}</p>
+${secciones || '<p>Sin datos para el período seleccionado.</p>'}
+<h2>Datos completos (${mediciones.length} registros)</h2>
+<div style="overflow-x:auto"><table class="data">
+  <thead><tr><th>Fecha</th>${camposConDatos.map((c) => `<th>${etiquetaCampo(c)}</th>`).join('')}</tr></thead>
+  <tbody>${filas}</tbody>
+</table></div>
+</body></html>`;
+
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `reporte_${(boya?.nombre ?? 'boya').replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.html`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div className="p-4 md:p-8">
       <div className="mb-6">
@@ -364,6 +666,14 @@ export default function TelemetriaPage() {
           className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {loading ? 'Cargando...' : 'Actualizar'}
+        </button>
+        <button
+          onClick={exportarReporte}
+          disabled={mediciones.length === 0}
+          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ml-auto"
+          title="Descarga un reporte único con todos los gráficos y datos"
+        >
+          Exportar reporte
         </button>
       </div>
 
@@ -591,7 +901,9 @@ export default function TelemetriaPage() {
               const serie = seriePorCampo(campo);
               if (serie.length <= 1) return null;
 
-              const ultimoValor = formatearNumero(serie[serie.length - 1].valor);
+              const ultimoNum = serie[serie.length - 1].valor;
+              const ultimoValor = formatearNumero(ultimoNum);
+              const sensor = sensorDeCampo(campo);
 
               return (
                 <div
@@ -602,7 +914,10 @@ export default function TelemetriaPage() {
                   <h4 className="text-md font-bold text-slate-600 mb-2">{etiquetaCampo(campo)}</h4>
                   {/* Muestra el último valor en grande. ¡Excelente para UX! */}
                   <span className="text-3xl font-black text-blue-600 mb-4">{ultimoValor}</span>
-                  
+
+                  {/* Gauge de niveles definidos por el usuario para este sensor */}
+                  <GaugeIndicadores valor={ultimoNum} indicadores={sensor?.indicadores} />
+
                   <span className="text-xs font-semibold text-blue-500 bg-blue-50 px-3 py-1.5 rounded-full group-hover:bg-blue-600 group-hover:text-white transition-colors">
                     Ver gráfica detallada
                   </span>
@@ -634,9 +949,12 @@ export default function TelemetriaPage() {
 
                 {/* Contenido del Modal (La gráfica) */}
                 <div className="p-6">
-                  <MiniChart 
-                    nombre={sensorActivo} 
-                    puntos={seriePorCampo(sensorActivo)} 
+                  <MiniChart
+                    nombre={sensorActivo}
+                    puntos={seriePorCampo(sensorActivo)}
+                    boyaId={boyaId}
+                    notas={notas}
+                    onGuardarNota={guardarNota}
                   />
                 </div>
                 

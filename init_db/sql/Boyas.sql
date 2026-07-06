@@ -3,6 +3,7 @@
 /* Database:       sensores                                     */
 /*==============================================================*/
 
+DROP TABLE IF EXISTS INDICADOR;
 DROP TABLE IF EXISTS SENSOR;
 DROP TABLE IF EXISTS BOYA;
 DROP TABLE IF EXISTS UNIDADESMEDIDA;
@@ -43,6 +44,23 @@ CREATE TABLE SENSOR (
       REFERENCES UNIDADESMEDIDA (IDUNIDAD) ON DELETE RESTRICT ON UPDATE RESTRICT,
    CONSTRAINT FK_SENSOR_BOYA FOREIGN KEY (IDBOYA)
       REFERENCES BOYA (IDBOYA) ON DELETE RESTRICT ON UPDATE RESTRICT
+);
+
+/*==============================================================*/
+/* Table: INDICADOR                                             */
+/* Niveles cualitativos definidos por el usuario para cada      */
+/* sensor (ej. pH: Ácido [0-6.5], Neutro [6.5-7.5], Alcalino).  */
+/*==============================================================*/
+CREATE TABLE INDICADOR (
+   IDINDICADOR SERIAL      NOT NULL,
+   IDSENSOR    INT4        NOT NULL,
+   ETIQUETA    VARCHAR(50) NOT NULL,
+   VALORMIN    NUMERIC     NOT NULL,
+   VALORMAX    NUMERIC     NOT NULL,
+   COLOR       VARCHAR(20) NOT NULL,
+   CONSTRAINT PK_INDICADOR PRIMARY KEY (IDINDICADOR),
+   CONSTRAINT FK_INDICADOR_SENSOR FOREIGN KEY (IDSENSOR)
+      REFERENCES SENSOR (IDSENSOR) ON DELETE CASCADE ON UPDATE RESTRICT
 );
 
 /*==============================================================*/

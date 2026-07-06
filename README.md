@@ -22,7 +22,7 @@
 
 **HidroSentinel** es una plataforma para la **evaluación y monitoreo de riesgos sanitarios en ambientes marinos**. El sistema integra la gestión de infraestructura IoT (boyas y sensores desplegados en campo) con el procesamiento, almacenamiento y visualización masiva de datos de telemetría capturados en archivos CSV.
 
-La plataforma resuelve un desafío técnico central: **la persistencia de dos naturalezas de datos fundamentalmente distintas**. Por un lado, los metadatos relacionales (usuarios, roles, boyas, sensores y sus rangos operativos); por otro, series temporales de alta frecuencia provenientes de los sensores. HidroSentinel afronta esta dualidad mediante una arquitectura de **persistencia políglota**, empleando el motor de base de datos idóneo para cada dominio.
+La plataforma resuelve un desafío técnico central: **la persistencia de dos naturalezas de datos fundamentalmente distintas**. Por un lado, los metadatos relacionales (usuarios, roles, boyas, sensores, sus umbrales de riesgo y sus niveles cualitativos); por otro, series temporales de alta frecuencia provenientes de los sensores. HidroSentinel afronta esta dualidad mediante una arquitectura de **persistencia políglota**, empleando el motor de base de datos idóneo para cada dominio.
 
 El núcleo funcional del sistema es su **motor de ingesta de telemetría**, diseñado para procesar cargas masivas de archivos CSV aplicando validación estricta de seguridad, limpieza de datos anómalos y cálculo estadístico (media, mediana y moda) antes de la persistencia en la base de datos de series temporales.
 
@@ -73,9 +73,9 @@ Cada motor se selecciona por su idoneidad: PostgreSQL aporta integridad referenc
 |--------|-----------------|
 | **🔐 Autenticación (Auth)** | Inicio de sesión con **JSON Web Tokens (JWT)**, hash de contraseñas con `bcrypt` y middleware de control de acceso basado en roles (`ADMINISTRADOR`, `OPERADOR`). |
 | **👥 Gestión de Usuarios** | CRUD de usuarios, asignación de roles mediante transacciones atómicas, y cambio de contraseña con autorización granular (auto-servicio vs. administración). |
-| **📡 Gestión de Boyas y Sensores** | CRUD de boyas, sensores y unidades de medida. Incluye validación de la invariante de rangos operativos y umbrales de riesgo, y control de integridad referencial (claves foráneas). |
+| **📡 Gestión de Boyas y Sensores** | CRUD de boyas, sensores, unidades de medida e **indicadores** (niveles cualitativos por sensor, ej. Ácido/Neutro/Alcalino para el pH). Valida los umbrales de riesgo y el no solapamiento de niveles, con control de integridad referencial (claves foráneas). |
 | **📥 Ingesta de Telemetría (CSV)** | Motor de carga masiva de archivos CSV: validación de seguridad del archivo (firmas binarias, extensión, tamaño), limpieza de datos anómalos por fila y por valor, y persistencia en InfluxDB. Verifica la coherencia entre las columnas del CSV y los sensores registrados. |
-| **📊 Analítica** | Cálculo de **media, mediana y moda** por sensor durante la ingesta, y consulta histórica de mediciones para su visualización en el frontend. |
+| **📊 Analítica y Visualización** | Cálculo de **media, mediana, moda, máximos y mínimos** por sensor; *downsampling* con `aggregateWindow` para históricos extensos; tarjetas con *gauge* de niveles; panel de **alertas** por cruce de umbrales; y **exportación de reportes** con todos los gráficos y datos. |
 
 ---
 
@@ -110,46 +110,72 @@ cp .env.example .env
 
 > ⚠️ **Importante:** `PG_PORT` debe coincidir con `POSTGRES_PORT` (el puerto que el contenedor de PostgreSQL publica al host). Define un `JWT_SECRET` largo y aleatorio, y un `INFLUXDB_TOKEN` seguro.
 
-### 3. Levantar las bases de datos con Docker
+### 3. Levantar TODO con un solo comando (Docker)
 
-Desde la raíz del proyecto, este comando inicia los contenedores de PostgreSQL e InfluxDB. Los scripts de inicialización SQL crean automáticamente las bases de datos y sus tablas en el primer arranque:
-
-```bash
-docker compose up -d
-```
-
-Verifica que ambos contenedores estén activos:
+Desde la raíz del proyecto, este comando construye e inicia **los cuatro servicios** —PostgreSQL, InfluxDB, backend y frontend— en el orden correcto (las bases de datos primero; el backend espera a que estén saludables; el frontend espera al backend):
 
 ```bash
-docker ps
+docker compose up -d --build
 ```
 
-### 4. Iniciar el Backend
+En el primer arranque, los scripts SQL crean automáticamente las bases de datos y sus tablas, y el backend siembra el usuario administrador de forma automática. Verifica que los cuatro contenedores estén activos:
 
 ```bash
-cd backend
-npm install
-npm run seed      # crea el usuario administrador inicial (una sola vez)
-npm run dev       # inicia el servidor en modo desarrollo (hot-reload)
+docker compose ps
 ```
 
-El backend valida la conexión a las tres bases de datos antes de aceptar tráfico. Estará disponible en **http://localhost:3000**.
+Una vez levantado, la aplicación queda disponible en:
+
+| Servicio | URL |
+|----------|-----|
+| **Frontend** (interfaz web) | **http://localhost:8080** |
+| **Backend** (API REST) | **http://localhost:3000** |
 
 **Credenciales del administrador inicial:**
 - **Correo:** `admin@hidrosentinel.ec`
 - **Contraseña:** `Admin2026!`
 
-### 5. Iniciar el Frontend
+> El frontend (servido por nginx) hace de *proxy* de las peticiones `/api` hacia el backend, por lo que todo funciona desde un único origen sin configuración adicional.
 
-En una **nueva terminal**:
+### Comandos de uso diario
 
 ```bash
-cd frontend
-npm install
-npm run dev
+docker compose up -d --build   # levantar (reconstruye tras cambios de código)
+docker compose ps              # ver el estado de los contenedores
+docker compose logs -f backend # ver los logs del backend en vivo
+docker compose stop            # detener sin borrar nada
+docker compose down            # detener y eliminar los contenedores (conserva los datos)
+docker compose down -v         # ⚠️ detener y BORRAR también los datos de las bases
 ```
 
-La interfaz estará disponible en **http://localhost:5173**.
+---
+
+## 🧑‍💻 Modo Desarrollo (opcional, con hot-reload)
+
+Para desarrollar con recarga automática, se pueden ejecutar solo las bases de datos en Docker y el backend/frontend localmente.
+
+**1. Solo las bases de datos en Docker:**
+
+```bash
+docker compose up -d postgres influxdb
+```
+
+**2. Backend** (en una terminal, desde `backend/`):
+
+```bash
+npm install
+npm run seed      # crea el admin inicial (una sola vez)
+npm run dev       # servidor con hot-reload en http://localhost:3000
+```
+
+**3. Frontend** (en otra terminal, desde `frontend/`):
+
+```bash
+npm install
+npm run dev       # interfaz con hot-reload en http://localhost:5173
+```
+
+> En modo desarrollo, Vite hace *proxy* de `/api` hacia `http://localhost:3000`. Nota que el backend local usa `PG_HOST=localhost` y `PG_PORT=5434` del `.env`, mientras que en Docker esos valores se sobrescriben automáticamente para usar la red interna.
 
 ---
 
@@ -229,11 +255,14 @@ Sistema_Sensores_2026/
 │   │   ├── app.js         # Configuración de Express
 │   │   └── server.js      # Verificación de BD y arranque
 │   ├── scripts/           # Semilla del administrador inicial
-│   └── tests/             # unit · seguridad · integracion
+│   ├── tests/             # unit · seguridad · integracion
+│   └── Dockerfile         # Imagen del backend (Node)
 ├── frontend/              # Aplicación React (Vite + Tailwind CSS)
+│   ├── Dockerfile         # Build con Vite → servido por nginx
+│   └── nginx.conf         # Sirve la SPA + proxy /api al backend
 ├── init_db/               # Scripts SQL de inicialización de PostgreSQL
 ├── scripts/               # Utilidades de generación, carga y estrés
-├── docker-compose.yml     # Contenedores de PostgreSQL e InfluxDB
+├── docker-compose.yml     # Orquesta los 4 servicios (DBs + backend + frontend)
 └── .env.example           # Plantilla de variables de entorno
 ```
 

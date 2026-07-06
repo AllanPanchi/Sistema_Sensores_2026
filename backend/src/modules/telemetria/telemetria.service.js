@@ -91,7 +91,7 @@ const esPlausible = (campo, valor) => {
   return valor >= regla.min && valor <= regla.max;
 };
 
-// ── Estadísticas: media, mediana y moda por campo ──────────────────────────
+// ── Estadísticas: mínimo, máximo, media, mediana y moda por campo ──────────
 
 const calcularEstadisticas = (valoresPorCampo) => {
   const stats = {};
@@ -116,6 +116,8 @@ const calcularEstadisticas = (valoresPorCampo) => {
     }
 
     stats[campo] = {
+      minimo:  orden[0],
+      maximo:  orden[orden.length - 1],
       media:   Math.round(media * 10_000) / 10_000,
       mediana: Math.round(mediana * 10_000) / 10_000,
       moda,

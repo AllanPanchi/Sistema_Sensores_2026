@@ -103,7 +103,7 @@ describe('procesarCSV — estadísticas', () => {
     const res = await service.procesarCSV('3', mkFile(csv));
 
     expect(res.estadisticas.ph).toEqual({
-      media: 8, mediana: 7, moda: 7, muestras: 4,
+      minimo: 6, maximo: 12, media: 8, mediana: 7, moda: 7, muestras: 4,
     });
   });
 
@@ -208,7 +208,8 @@ describe('consultarTelemetria — sanitización de parámetros', () => {
 
   test('acota horas y limite a enteros dentro de rango', async () => {
     await service.consultarTelemetria('3', { horas: '99999', limite: '-5' });
-    expect(telemetriaRepo.queryTelemetria).toHaveBeenCalledWith(3, 720, 1);
+    // Tope de 4320 h (6 meses), acorde a los rangos de downsampling soportados
+    expect(telemetriaRepo.queryTelemetria).toHaveBeenCalledWith(3, 4320, 1);
   });
 
   test('texto no numérico cae a los valores por defecto', async () => {

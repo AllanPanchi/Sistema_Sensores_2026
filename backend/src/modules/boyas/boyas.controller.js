@@ -90,3 +90,26 @@ export const eliminarUnidad = async (req, res, next) => {
     ok(res, 'Unidad de medida eliminada exitosamente');
   } catch (err) { next(err); }
 };
+
+// ── Indicadores (niveles cualitativos por sensor) ──────────────────────────
+
+export const listarIndicadores = async (req, res, next) => {
+  try {
+    const data = await boyasService.listarIndicadores(req.params.id, req.params.sensorId);
+    ok(res, 'Indicadores obtenidos exitosamente', data);
+  } catch (err) { next(err); }
+};
+
+export const crearIndicador = async (req, res, next) => {
+  try {
+    const data = await boyasService.crearIndicador(req.params.id, req.params.sensorId, req.body);
+    ok(res, 'Indicador creado exitosamente', data, 201);
+  } catch (err) { next(err); }
+};
+
+export const eliminarIndicador = async (req, res, next) => {
+  try {
+    await boyasService.eliminarIndicador(req.params.id, req.params.sensorId, req.params.indicadorId);
+    ok(res, 'Indicador eliminado exitosamente');
+  } catch (err) { next(err); }
+};

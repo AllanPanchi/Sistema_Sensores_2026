@@ -136,6 +136,68 @@ export const eliminarSensor = async (idboya, sensorId) => {
   return eliminado;
 };
 
+// ── Indicadores (niveles cualitativos definidos por el usuario) ────────────
+
+// Verifica que el sensor exista Y pertenezca a la boya de la URL
+const obtenerSensorDeBoya = async (idboya, sensorId) => {
+  await obtenerBoya(idboya);
+  const sensor = await repo.findSensorById(sensorId, idboya);
+  if (!sensor) {
+    throw new AppError(`Sensor con ID ${sensorId} no encontrado en la boya ${idboya}`, 404);
+  }
+  return sensor;
+};
+
+export const listarIndicadores = async (idboya, sensorId) => {
+  await obtenerSensorDeBoya(idboya, sensorId);
+  return repo.findIndicadoresBySensor(sensorId);
+};
+
+export const crearIndicador = async (idboya, sensorId, { etiqueta, valormin, valormax, color }) => {
+  await obtenerSensorDeBoya(idboya, sensorId);
+
+  const errors = [];
+  if (!etiqueta?.trim()) errors.push('La etiqueta del nivel es requerida.');
+  if (etiqueta?.trim().length > 50) errors.push('La etiqueta no puede exceder 50 caracteres.');
+
+  const min = parseFloat(valormin);
+  const max = parseFloat(valormax);
+  if ([min, max].some(Number.isNaN)) {
+    errors.push('valormin y valormax deben ser numéricos.');
+  } else if (min >= max) {
+    errors.push('valormin debe ser menor que valormax.');
+  }
+
+  if (!/^#[0-9a-fA-F]{6}$/.test(color ?? '')) {
+    errors.push('El color debe ser un código hexadecimal (ej. #22c55e).');
+  }
+
+  if (errors.length) throw new AppError('Indicador inválido', 400, errors);
+
+  // Evitar solapamiento con los niveles ya definidos: cada valor debe caer
+  // en un único nivel para que el gráfico sea inequívoco.
+  const existentes = await repo.findIndicadoresBySensor(sensorId);
+  const choca = existentes.find((i) => min < parseFloat(i.valormax) && max > parseFloat(i.valormin));
+  if (choca) {
+    throw new AppError(
+      `El rango [${min}, ${max}] se solapa con el nivel "${choca.etiqueta}" [${choca.valormin}, ${choca.valormax}]`,
+      409
+    );
+  }
+
+  return repo.createIndicador({
+    idsensor: parseInt(sensorId, 10),
+    etiqueta, valormin: min, valormax: max, color,
+  });
+};
+
+export const eliminarIndicador = async (idboya, sensorId, indicadorId) => {
+  await obtenerSensorDeBoya(idboya, sensorId);
+  const eliminado = await repo.deleteIndicador(indicadorId, sensorId);
+  if (!eliminado) throw new AppError(`Indicador con ID ${indicadorId} no encontrado`, 404);
+  return eliminado;
+};
+
 // ── Unidades de Medida ─────────────────────────────────────────────────────
 
 export const listarUnidades = () => repo.findAllUnidades();

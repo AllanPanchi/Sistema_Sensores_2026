@@ -4,6 +4,7 @@ import {
   listarBoyas, obtenerBoya, crearBoya, actualizarBoya, eliminarBoya,
   listarSensores, crearSensor, actualizarSensor, eliminarSensor,
   listarUnidades, crearUnidad, eliminarUnidad,
+  listarIndicadores, crearIndicador, eliminarIndicador,
 } from './boyas.controller.js';
 
 const router = Router();
@@ -30,5 +31,10 @@ router.get('/:id/sensores',                      listarSensores);
 router.post('/:id/sensores',                     requireRole('ADMINISTRADOR'), crearSensor);
 router.put('/:id/sensores/:sensorId',            requireRole('ADMINISTRADOR'), actualizarSensor);
 router.delete('/:id/sensores/:sensorId',         requireRole('ADMINISTRADOR'), eliminarSensor);
+
+// ── Indicadores (niveles cualitativos, anidados bajo el sensor) ─────────────
+router.get('/:id/sensores/:sensorId/indicadores',                   listarIndicadores);
+router.post('/:id/sensores/:sensorId/indicadores',                  requireRole('ADMINISTRADOR'), crearIndicador);
+router.delete('/:id/sensores/:sensorId/indicadores/:indicadorId',   requireRole('ADMINISTRADOR'), eliminarIndicador);
 
 export default router;
