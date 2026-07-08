@@ -240,7 +240,15 @@ function IndicadoresModal({ boyaId, sensor, onClose, onRefresh }) {
           </div>
 
           <div className="pt-3 border-t space-y-3">
-            <p className="text-sm font-medium text-slate-700">Nuevo nivel</p>
+            <div className="flex items-baseline justify-between">
+              <p className="text-sm font-medium text-slate-700">Nuevo nivel</p>
+              <p className="text-xs text-slate-400">
+                Umbrales del sensor: [{sensor.umbralriesgomin} – {sensor.umbralriesgomax}]
+              </p>
+            </div>
+            <p className="text-xs text-slate-500 -mt-1">
+              Cada nivel debe quedar dentro de los umbrales del sensor.
+            </p>
             <input
               placeholder="Etiqueta (ej. Neutro, Ácido, Óptimo)"
               value={form.etiqueta}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getBoyas } from '../api/boyas.api';
 import { getUsuarios } from '../api/usuarios.api';
 import { getAlertas } from '../api/telemetria.api';
@@ -36,10 +37,15 @@ const formatearFecha = (iso) =>
     hour: '2-digit', minute: '2-digit',
   });
 
-function AlertaItem({ alerta }) {
+function AlertaItem({ alerta, onIr }) {
   const estilo = ESTILO_NIVEL[alerta.nivel] ?? ESTILO_NIVEL.RIESGO;
   return (
-    <div className={`rounded-lg border border-l-4 p-4 ${estilo.card}`}>
+    <button
+      type="button"
+      onClick={onIr}
+      title="Ver telemetría de esta boya"
+      className={`w-full text-left rounded-lg border border-l-4 p-4 transition-shadow hover:shadow-md focus:outline-none focus:ring-2 focus:ring-blue-400 ${estilo.card}`}
+    >
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -51,16 +57,19 @@ function AlertaItem({ alerta }) {
             <span className="text-sm text-slate-600">{alerta.sensor}</span>
           </div>
           <p className="text-sm text-slate-700 mt-1.5">{alerta.mensaje}</p>
+          <span className="text-xs font-medium text-blue-600 mt-1.5 inline-flex items-center gap-1">
+            Ver en telemetría →
+          </span>
         </div>
         <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">
           {formatearFecha(alerta.fecha)}
         </span>
       </div>
-    </div>
+    </button>
   );
 }
 
-function PanelAlertas({ loading, data }) {
+function PanelAlertas({ loading, data, onIrABoya }) {
   if (loading) {
     return <p className="text-slate-500 text-sm">Evaluando alertas...</p>;
   }
@@ -102,7 +111,11 @@ function PanelAlertas({ loading, data }) {
       </div>
       <div className="p-4 space-y-3 max-h-[26rem] overflow-y-auto">
         {alertas.map((a, i) => (
-          <AlertaItem key={`${a.boya.id}-${a.sensor}-${i}`} alerta={a} />
+          <AlertaItem
+            key={`${a.boya.id}-${a.sensor}-${i}`}
+            alerta={a}
+            onIr={() => onIrABoya(a.boya.id)}
+          />
         ))}
       </div>
     </div>
@@ -111,6 +124,7 @@ function PanelAlertas({ loading, data }) {
 
 export default function DashboardPage() {
   const { user, hasRole } = useAuth();
+  const navigate = useNavigate();
   const [boyas, setBoyas] = useState([]);
   const [usuariosCount, setUsuariosCount] = useState(null);
   const [alertas, setAlertas] = useState(null);
@@ -206,7 +220,11 @@ export default function DashboardPage() {
       {/* Panel de alertas: último valor de cada sensor vs. sus umbrales */}
       <div className="mt-6 md:mt-8">
         <h3 className="text-base font-semibold text-slate-800 mb-3">Estado de sensores</h3>
-        <PanelAlertas loading={loadingAlertas} data={alertas} />
+        <PanelAlertas
+          loading={loadingAlertas}
+          data={alertas}
+          onIrABoya={(id) => navigate(`/telemetria?boya=${id}`)}
+        />
       </div>
     </div>
   );

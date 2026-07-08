@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { getBoyas, getSensores } from '../api/boyas.api';
 import { uploadCSV, getTelemetria } from '../api/telemetria.api';
 import { useAuth } from '../context/AuthContext';
@@ -199,11 +200,18 @@ function MiniChart({ nombre, puntos, boyaId, notas = {}, onGuardarNota }) {
 
         {hover && (
           <div
-            className="absolute pointer-events-none bg-slate-800 text-white text-xs rounded-md px-2 py-1 shadow-lg -translate-x-1/2 -translate-y-full"
+            className="absolute pointer-events-none bg-slate-800 text-white text-xs rounded-md px-2 py-1 shadow-lg -translate-x-1/2 -translate-y-full max-w-[220px]"
             style={{ left: `${(hover.px / W) * 100}%`, top: `${(hover.py / H) * 100 - 6}%` }}
           >
-            <span className="font-semibold">{formatearNumero(puntos[hover.i].valor)}</span>
-            <span className="text-slate-300 ml-1.5">{formatearFecha(puntos[hover.i].fecha)}</span>
+            <div>
+              <span className="font-semibold">{formatearNumero(puntos[hover.i].valor)}</span>
+              <span className="text-slate-300 ml-1.5">{formatearFecha(puntos[hover.i].fecha)}</span>
+            </div>
+            {notaDe(hover.i) && (
+              <div className="mt-1 pt-1 border-t border-white/20 text-amber-300 whitespace-normal">
+                <span className="mr-1">📝</span>{notaDe(hover.i).texto}
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -298,6 +306,7 @@ function GaugeIndicadores({ valor, indicadores }) {
 // ── Página principal ───────────────────────────────────────────────────────
 export default function TelemetriaPage() {
   const { hasRole } = useAuth();
+  const [searchParams] = useSearchParams();
   const [boyas, setBoyas] = useState([]);
   const [boyaId, setBoyaId] = useState('');
   const [horas, setHoras] = useState(24);
@@ -355,10 +364,14 @@ export default function TelemetriaPage() {
       .then((res) => {
         const lista = res.data.data;
         setBoyas(lista);
-        if (lista.length > 0) setBoyaId(String(lista[0].idboya));
+        if (lista.length === 0) return;
+        // Si venimos de una alerta (?boya=ID) y esa boya existe, la preseleccionamos.
+        const solicitada = searchParams.get('boya');
+        const existe = solicitada && lista.some((b) => String(b.idboya) === String(solicitada));
+        setBoyaId(String(existe ? solicitada : lista[0].idboya));
       })
       .catch(() => setError('No se pudieron cargar las boyas'));
-  }, []);
+  }, [searchParams]);
 
   const cargarTelemetria = useCallback(async () => {
     if (!boyaId) return;

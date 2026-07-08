@@ -154,7 +154,7 @@ export const listarIndicadores = async (idboya, sensorId) => {
 };
 
 export const crearIndicador = async (idboya, sensorId, { etiqueta, valormin, valormax, color }) => {
-  await obtenerSensorDeBoya(idboya, sensorId);
+  const sensor = await obtenerSensorDeBoya(idboya, sensorId);
 
   const errors = [];
   if (!etiqueta?.trim()) errors.push('La etiqueta del nivel es requerida.');
@@ -166,6 +166,14 @@ export const crearIndicador = async (idboya, sensorId, { etiqueta, valormin, val
     errors.push('valormin y valormax deben ser numéricos.');
   } else if (min >= max) {
     errors.push('valormin debe ser menor que valormax.');
+  } else {
+    // Los niveles cualitativos deben respetar los umbrales de riesgo del sensor:
+    // ningún nivel puede caer fuera del rango [umbralriesgomin, umbralriesgomax].
+    const uMin = parseFloat(sensor.umbralriesgomin);
+    const uMax = parseFloat(sensor.umbralriesgomax);
+    if (!Number.isNaN(uMin) && !Number.isNaN(uMax) && (min < uMin || max > uMax)) {
+      errors.push(`El nivel [${min}, ${max}] debe estar dentro de los umbrales del sensor [${uMin}, ${uMax}].`);
+    }
   }
 
   if (!/^#[0-9a-fA-F]{6}$/.test(color ?? '')) {
