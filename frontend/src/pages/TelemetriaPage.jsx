@@ -305,7 +305,7 @@ function GaugeIndicadores({ valor, indicadores }) {
 
 // ── Página principal ───────────────────────────────────────────────────────
 export default function TelemetriaPage() {
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const [searchParams] = useSearchParams();
   const [boyas, setBoyas] = useState([]);
   const [boyaId, setBoyaId] = useState('');
@@ -315,6 +315,8 @@ export default function TelemetriaPage() {
   const [error, setError] = useState('');
   const [sensorActivo, setSensorActivo] = useState(null);
   const [sensoresBoya, setSensoresBoya] = useState([]);   // sensores con sus indicadores
+  const [exportOpen, setExportOpen] = useState(false);    // modal de selección de sensores a exportar
+  const [exportSel, setExportSel] = useState([]);         // campos elegidos para el reporte
 
   // Notas por punto: { `${boyaId}|${campo}|${fecha}`: { boyaId, campo, fecha, valor, texto, creado } }
   // Persistidas en localStorage — sobreviven recargas en el mismo navegador.
@@ -553,12 +555,30 @@ export default function TelemetriaPage() {
     };
   };
 
+  // Campos de la boya que tienen datos suficientes para graficar (exportables)
+  const camposExportables = () => campos.filter((c) => seriePorCampo(c).length > 1);
+
+  // Abre el modal de selección con todos los sensores marcados por defecto
+  const abrirExportar = () => {
+    setExportSel(camposExportables());
+    setExportOpen(true);
+  };
+
+  const toggleExportCampo = (campo) =>
+    setExportSel((prev) =>
+      prev.includes(campo) ? prev.filter((c) => c !== campo) : [...prev, campo]
+    );
+
   // ── Exportar reporte único (HTML autocontenido con gráficos + toda la data) ──
-  const exportarReporte = () => {
+  // `elegidos` = campos a incluir; por defecto, los seleccionados en el modal.
+  const exportarReporte = (elegidos = exportSel) => {
     const boya = boyas.find((b) => String(b.idboya) === boyaId);
     const rango = RANGOS.find((r) => r.valor === horas)?.etiqueta ?? '';
     const generado = new Date().toLocaleString('es-EC');
-    const camposConDatos = campos.filter((c) => seriePorCampo(c).length > 1);
+    const generadoPor = user
+      ? `${[user.nombre, user.apellido].filter(Boolean).join(' ')}${user.correo ? ` (${user.correo})` : ''}`
+      : '—';
+    const camposConDatos = camposExportables().filter((c) => elegidos.includes(c));
     const totalNotas = camposConDatos.reduce((s, c) => s + notasCampo(c).length, 0);
 
     const secciones = camposConDatos.map((campo) => {
@@ -617,7 +637,8 @@ export default function TelemetriaPage() {
 </style></head><body>
 <button class="btn" onclick="window.print()">Imprimir / Guardar PDF</button>
 <h1>HidroSentinel — Reporte de Telemetría</h1>
-<p class="meta">Boya: <strong>${boya?.nombre ?? '—'}</strong> · Período: ${rango} · Generado: ${generado} · ${mediciones.length} registros${totalNotas ? ` · ${totalNotas} observación(es)` : ''}</p>
+<p class="meta">Boya: <strong>${boya?.nombre ?? '—'}</strong> · Período: ${rango} · ${mediciones.length} registros${totalNotas ? ` · ${totalNotas} observación(es)` : ''}</p>
+<p class="meta">Generado por: <strong>${escapeHtml(generadoPor)}</strong> · ${generado}</p>
 ${secciones || '<p>Sin datos para el período seleccionado.</p>'}
 <h2>Datos completos (${mediciones.length} registros)</h2>
 <div style="overflow-x:auto"><table class="data">
@@ -635,6 +656,7 @@ ${secciones || '<p>Sin datos para el período seleccionado.</p>'}
     a.click();
     a.remove();
     URL.revokeObjectURL(url);
+    setExportOpen(false);
   };
 
   return (
@@ -681,14 +703,93 @@ ${secciones || '<p>Sin datos para el período seleccionado.</p>'}
           {loading ? 'Cargando...' : 'Actualizar'}
         </button>
         <button
-          onClick={exportarReporte}
+          onClick={abrirExportar}
           disabled={mediciones.length === 0}
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50 ml-auto"
-          title="Descarga un reporte único con todos los gráficos y datos"
+          title="Elige los sensores y descarga un reporte con sus gráficos y datos"
         >
           Exportar reporte
         </button>
       </div>
+
+      {/* Modal: selección de sensores a exportar */}
+      {exportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+            <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 bg-slate-50">
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Exportar reporte</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {boyas.find((b) => String(b.idboya) === boyaId)?.nombre ?? 'Boya'} · elige los sensores a incluir
+                </p>
+              </div>
+              <button
+                onClick={() => setExportOpen(false)}
+                className="text-slate-400 hover:text-red-500 transition-colors p-1"
+                title="Cerrar"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1">
+              {(() => {
+                const disponibles = camposExportables();
+                const todos = exportSel.length === disponibles.length && disponibles.length > 0;
+                return (
+                  <>
+                    {/* Opción: todos los sensores de la boya */}
+                    <label className="flex items-center gap-3 py-2.5 px-3 rounded-lg bg-emerald-50 border border-emerald-200 cursor-pointer mb-3">
+                      <input
+                        type="checkbox"
+                        checked={todos}
+                        onChange={(e) => setExportSel(e.target.checked ? disponibles : [])}
+                        className="w-4 h-4 accent-emerald-600"
+                      />
+                      <span className="text-sm font-semibold text-emerald-800">
+                        Todos los sensores de esta boya ({disponibles.length})
+                      </span>
+                    </label>
+
+                    {/* Lista de sensores individuales */}
+                    <div className="divide-y divide-slate-100 border border-slate-200 rounded-lg">
+                      {disponibles.map((campo) => (
+                        <label key={campo} className="flex items-center gap-3 py-2.5 px-3 cursor-pointer hover:bg-slate-50">
+                          <input
+                            type="checkbox"
+                            checked={exportSel.includes(campo)}
+                            onChange={() => toggleExportCampo(campo)}
+                            className="w-4 h-4 accent-blue-600"
+                          />
+                          <span className="text-sm text-slate-700">{etiquetaCampo(campo)}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-slate-100 bg-slate-50">
+              <button
+                onClick={() => setExportOpen(false)}
+                className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => exportarReporte()}
+                disabled={exportSel.length === 0}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
+              >
+                Descargar ({exportSel.length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Carga de CSV */}
       {puedeSubir && (
