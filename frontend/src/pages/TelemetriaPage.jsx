@@ -11,6 +11,27 @@ const normalizarCampo = (str) =>
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '');
 
+// Detecta el delimitador del CSV (';' o ',') desde la cabecera
+const detectarDelimitador = (lineaCabecera) => {
+  const sinComillas = lineaCabecera.replace(/"[^"]*"/g, '');
+  return sinComillas.includes(';') ? ';' : ',';
+};
+
+// Divide una línea CSV respetando campos entrecomillados
+const splitCSVLine = (linea, delimitador) => {
+  const campos = [];
+  let actual = '';
+  let enComillas = false;
+  for (let i = 0; i < linea.length; i++) {
+    const ch = linea[i];
+    if (ch === '"') { enComillas = !enComillas; continue; }
+    if (ch === delimitador && !enComillas) { campos.push(actual); actual = ''; continue; }
+    actual += ch;
+  }
+  campos.push(actual);
+  return campos;
+};
+
 const RANGOS = [
   { valor: 24,   etiqueta: 'Últimas 24 h' },
   { valor: 72,   etiqueta: 'Últimos 3 días' },
@@ -426,7 +447,8 @@ export default function TelemetriaPage() {
       // Leer solo la primera línea del CSV para obtener las cabeceras
       const text = await file.text();
       const primeraLinea = text.split(/\r?\n/).find((l) => l.trim() !== '') ?? '';
-      const columnasCsv = primeraLinea.split(';').slice(1).map(normalizarCampo).filter(Boolean);
+      const delimitador = detectarDelimitador(primeraLinea);
+      const columnasCsv = splitCSVLine(primeraLinea, delimitador).slice(1).map(normalizarCampo).filter(Boolean);
 
       // Obtener sensores de la boya seleccionada
       const res = await getSensores(boyaId);
@@ -490,13 +512,14 @@ export default function TelemetriaPage() {
       if (tieneManual) {
         const text = await archivo.text();
         const lineas = text.split(/\r?\n/);
-        const cabecera = lineas[0].split(';');
+        const delimitadorUpload = detectarDelimitador(lineas[0]);
+        const cabecera = splitCSVLine(lineas[0], delimitadorUpload);
         preview.columnas.forEach(({ campo, asignacionManual }) => {
           if (!asignacionManual) return;
           const j = cabecera.findIndex((h, i) => i > 0 && normalizarCampo(h) === campo);
           if (j > 0) cabecera[j] = asignacionManual.nombresensor;
         });
-        lineas[0] = cabecera.join(';');
+        lineas[0] = cabecera.join(delimitadorUpload);
         archivoASubir = new File([lineas.join('\r\n')], archivo.name, { type: 'text/csv' });
       }
 

@@ -59,19 +59,57 @@ const validarArchivo = (file) => {
   }
 };
 
-// ── Helpers de parseo (formato del datalogger: ';' y coma decimal) ─────────
+// ── Helpers de parseo (soporta ';' y ',' como delimitador, coma decimal) ───
 
-// "11/6/2026 12:20" → Date (o null si es inválida)
+// Detecta el delimitador del CSV a partir de la primera línea (cabecera).
+// Si la cabecera contiene ';' se usa ese; de lo contrario se asume ','.
+const detectarDelimitador = (lineaCabecera) => {
+  // Si hay al menos un ';' fuera de comillas, el delimitador es ';'
+  // (el formato con coma entrecomilla los decimales, así que no tendrá ';' sueltos)
+  const sinComillas = lineaCabecera.replace(/"[^"]*"/g, '');
+  return sinComillas.includes(';') ? ';' : ',';
+};
+
+// Divide una línea CSV respetando campos entrecomillados.
+// Necesario para el formato con ',' donde los decimales van entre comillas:
+//   24/04/2026 12:36:56,22,"51,9",22,"56,1",60,"-273,15",8,
+// Con ';' funciona igual de bien (no hay comillas normalmente).
+const splitCSVLine = (linea, delimitador) => {
+  const campos = [];
+  let actual = '';
+  let enComillas = false;
+
+  for (let i = 0; i < linea.length; i++) {
+    const ch = linea[i];
+    if (ch === '"') {
+      enComillas = !enComillas;
+      continue;                      // descarta la comilla
+    }
+    if (ch === delimitador && !enComillas) {
+      campos.push(actual);
+      actual = '';
+      continue;
+    }
+    actual += ch;
+  }
+  campos.push(actual);               // último campo
+  return campos;
+};
+
+// Soporta ambos formatos de fecha del datalogger:
+//   "11/6/2026 12:20"        → sin segundos, sin ceros iniciales
+//   "24/04/2026 12:36:56"    → con segundos, con ceros iniciales
 const parsearFecha = (str) => {
-  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})$/.exec(str?.trim() ?? '');
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(str?.trim() ?? '');
   if (!m) return null;
-  const [, dia, mes, anio, hora, min] = m.map(Number);
-  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || hora > 23 || min > 59) return null;
-  const fecha = new Date(anio, mes - 1, dia, hora, min);
+  const [, dia, mes, anio, hora, min, seg] = m.map((v) => (v === undefined ? 0 : Number(v)));
+  if (mes < 1 || mes > 12 || dia < 1 || dia > 31 || hora > 23 || min > 59 || seg > 59) return null;
+  const fecha = new Date(anio, mes - 1, dia, hora, min, seg);
   return Number.isNaN(fecha.getTime()) ? null : fecha;
 };
 
-// "48,2" → 48.2 (o null si no es un número puro — descarta 'ERROR', 'N/A', '=cmd()', etc.)
+// "48,2" → 48.2  /  "-273,15" → -273.15
+// (descarta 'ERROR', 'N/A', '=cmd()', etc.)
 const parsearNumero = (str) => {
   const limpio = str?.trim().replace(',', '.') ?? '';
   if (!/^-?\d+(\.\d+)?$/.test(limpio)) return null;
@@ -130,7 +168,7 @@ const calcularEstadisticas = (valoresPorCampo) => {
 // ── Limpieza fila por fila ─────────────────────────────────────────────────
 // Fila corrupta (columnas de más/menos, fecha inválida) → se descarta entera.
 // Celda corrupta (no numérica o fuera de rango físico) → se descarta solo el valor.
-const limpiarFilas = (lineas, cabecera, columnas) => {
+const limpiarFilas = (lineas, cabecera, columnas, delimitador) => {
   const filasValidas = [];
   let filasDescartadas = 0;
   let valoresDescartados = 0;
@@ -138,7 +176,12 @@ const limpiarFilas = (lineas, cabecera, columnas) => {
   const valoresPorCampo = Object.fromEntries(columnas.map(({ fieldName }) => [fieldName, []]));
 
   for (let i = 1; i < lineas.length; i++) {
-    const celdas = lineas[i].split(';');
+    const celdas = splitCSVLine(lineas[i], delimitador);
+
+    // Eliminar campos vacíos finales (trailing delimiters en filas de datos)
+    while (celdas.length > cabecera.length && celdas[celdas.length - 1].trim() === '') {
+      celdas.pop();
+    }
 
     if (celdas.length !== cabecera.length) { filasDescartadas++; continue; }
 
@@ -210,10 +253,17 @@ export const procesarCSV = async (idboya, file) => {
     throw new AppError(`El CSV excede el máximo de ${MAX_LINEAS} filas`, 413);
   }
 
-  // Cabecera: "Fecha;<sensor>;<sensor>;..."
-  const cabecera = lineas[0].split(';').map(normalizarCampo);
+  // Auto-detectar delimitador: ';' (datalogger sin comillas) ó ',' (producción con comillas)
+  const delimitador = detectarDelimitador(lineas[0]);
+
+  // Cabecera: "Fecha<delim><sensor><delim><sensor>..."
+  const cabecera = splitCSVLine(lineas[0], delimitador).map(normalizarCampo);
   if (cabecera[0] !== 'fecha' || cabecera.length < 2) {
-    throw new AppError('Cabecera inválida: se espera "Fecha;<sensores...>" separada por ";"', 400);
+    throw new AppError('Cabecera inválida: se espera "Fecha" seguida de nombres de sensores', 400);
+  }
+  // Eliminar campos vacíos finales (trailing delimiters)
+  while (cabecera.length > 1 && cabecera[cabecera.length - 1] === '') {
+    cabecera.pop();
   }
   const campos = cabecera.slice(1);
   if (campos.some((c) => c === '') || new Set(campos).size !== campos.length) {
@@ -242,7 +292,7 @@ export const procesarCSV = async (idboya, file) => {
   }
 
   const { filasValidas, filasDescartadas, valoresDescartados, valoresPorCampo } =
-    limpiarFilas(lineas, cabecera, columnas);
+    limpiarFilas(lineas, cabecera, columnas, delimitador);
 
   if (filasValidas.length === 0) {
     throw new AppError('El CSV no contiene ningún dato válido tras la limpieza', 400);
