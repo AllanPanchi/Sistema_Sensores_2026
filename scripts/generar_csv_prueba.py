@@ -127,7 +127,7 @@ def main() -> None:
     os.makedirs(args.salida, exist_ok=True)
 
     # Cada archivo simula un dia distinto de mediciones
-    base = datetime(2026, 4, 1, 12, 20)
+    base = datetime(2026, 7, 1, 12, 20)
     print(f"Generando {args.archivos} archivo(s) en '{args.salida}/' ...\n")
 
     for i in range(args.archivos):
